@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# IDE / tool state
+.vscode/
+.claude/
+
+# Private project notes (never enter git history)
+docs/
+paper_context.md
+
+# Large raw data (download via scripts/download_*.py)
+data/raw/era5/
+data/raw/glorys/
+data/raw/glorys_nino34/
+
+# Large processed data (regenerated via pipeline; see README for Zenodo link)
+data/processed/*.nc
+data/processed/eof_ssh.npz
+data/processed/eof_sst.npz
+# Included: eof_wind.npz (9.8MB), nao_weekly.csv, enso_nino34_weekly.csv
+
+# L96/L63 runtime data and checkpoints
+lorenz96/data/
+lorenz96/checkpoints/
+lorenz63/data/
+lorenz63/checkpoints/
+lorenz63/sweep_T100/
+
+# Generated figures — exclude everything except figures/main/
+figures/**
+!figures/main/
+!figures/main/**
+
+# Generated L96 sweep plots (sweep data .npz files are included)
+lorenz96/sweep/*.pdf
+lorenz96/sweep/*.png
+lorenz96/figures/
+
+# L63 generated figures
+lorenz63/figures/
+lorenz63/sweep/*.pdf
+lorenz63/sweep/*.png
+
+# Training logs (verbose; logs/beta_history.csv is included)
+logs/*.log
+
+# OOD diagnostic scripts (not publication-ready; add back when ready)
+scripts/ood_lead_diagnostic.py

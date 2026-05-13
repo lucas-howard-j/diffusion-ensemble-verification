@@ -1,0 +1,10 @@
+name: glorys_dl
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - xarray
+  - netcdf4
+  - pip:
+    - copernicusmarine

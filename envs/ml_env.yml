@@ -1,0 +1,26 @@
+name: ssh_ml
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.11
+  - xarray
+  - netcdf4
+  - dask
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - cartopy
+  - cmocean
+  - jupyter
+  - jupyterlab
+  - ipykernel
+  - tqdm
+  - pyyaml
+  - pip:
+    - copernicusmarine
+    - cdsapi
+    - eofs
+    - torch
+    - loguru

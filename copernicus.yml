@@ -1,0 +1,27 @@
+name: copernicus
+channels:
+  - conda-forge
+dependencies:
+  - basemap
+  - cartopy
+  - cmocean
+  - datashader
+  - fiona
+  - fire
+  - geoviews
+  - geopandas
+  - hvplot
+  - ipython
+  - ipykernel
+  - jupyter
+  - jupyterlab
+  - nodejs
+  - panel
+  - pip
+  - pip:
+     - copernicusmarine
+  - python=3.9
+  - pyproj
+  - rasterio
+  - rioxarray
+  - speedtest-cli
