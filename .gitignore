@@ -12,7 +12,7 @@ __pycache__/
 .vscode/
 .claude/
 
-# Private project notes (never enter git history)
+# Private project notes and task files (never enter git history)
 docs/
 paper_context.md
 

@@ -36,15 +36,15 @@ OUT_DIR = Path("figures")
 OUT_DIR.mkdir(exist_ok=True)
 
 
-def main() -> None:
-    model, schedule, ckpt, device = load_checkpoint()
+def main(ckpt_path: Path | None = None, split: str = "val") -> None:
+    model, schedule, ckpt, device = load_checkpoint(ckpt_path)
     target_dim = int(ckpt["target_dim"])
     gauge_mu  = ckpt["gauge_mu"]   # (n_gauges,)
     gauge_std = ckpt["gauge_std"]  # (n_gauges,)
     print(f"Device: {device}")
 
-    ds = SSHDiffusionDataset("val")
-    print(f"Val pairs: {len(ds)}")
+    ds = SSHDiffusionDataset(split)
+    print(f"{split.capitalize()} pairs: {len(ds)}")
 
     # Ordered gauge names matching model output indices
     all_gauge_names = [g["name"] for g in TIDE_GAUGES]
@@ -164,10 +164,10 @@ def main() -> None:
         ax.set_xlabel("Pearson r")
         if ax == axes[0]:
             ax.set_ylabel("Station")
-    fig1.suptitle(f"DDPM vs NOAA gauge — val set (ens={N_MEMBERS})", y=1.01)
+    fig1.suptitle(f"DDPM vs NOAA gauge — {split} set (ens={N_MEMBERS})", y=1.01)
     fig1.tight_layout()
-    savefig(fig1, OUT_DIR / "gauge_correlation_val.pdf")
-    print(f"\nSaved figures/gauge_correlation_val.pdf")
+    savefig(fig1, OUT_DIR / f"gauge_correlation_{split}.pdf")
+    print(f"\nSaved figures/gauge_correlation_{split}.pdf")
 
     # ── Figure 2: coherence matrices ─────────────────────────────────────────
     ncols = 1 + len(leads)
@@ -193,10 +193,10 @@ def main() -> None:
         pred_corr = pairwise_corr_matrix(pred_dfs[l][station_names].dropna(how="all"))
         im = _plot_mat(ax, pred_corr, f"Predicted {l}wk\n(pattern r={pattern_rs[l]:+.2f})")
         fig2.colorbar(im, ax=ax, shrink=0.7)
-    fig2.suptitle("Pairwise station correlation — observed vs DDPM ensemble mean", y=1.01)
+    fig2.suptitle(f"Pairwise station correlation — observed vs DDPM ensemble mean ({split} set)", y=1.01)
     fig2.tight_layout()
-    savefig(fig2, OUT_DIR / "coherence_matrices_val.pdf")
-    print(f"Saved figures/coherence_matrices_val.pdf")
+    savefig(fig2, OUT_DIR / f"coherence_matrices_{split}.pdf")
+    print(f"Saved figures/coherence_matrices_{split}.pdf")
 
     # ── Residual correlation matrices ─────────────────────────────────────────
     print("\nResidual correlation matrices (pred - obs)")
@@ -217,11 +217,18 @@ def main() -> None:
         vals = resid_corr.values.copy()
         np.fill_diagonal(vals, np.nan)
         print(f"  {l:>2}wk  mean off-diagonal r = {np.nanmean(vals):+.3f}")
-    fig3.suptitle("Residual (pred − obs) pairwise correlation — val set", y=1.01)
+    fig3.suptitle(f"Residual (pred − obs) pairwise correlation — {split} set", y=1.01)
     fig3.tight_layout()
-    savefig(fig3, OUT_DIR / "residual_correlation_val.pdf")
-    print(f"Saved figures/residual_correlation_val.pdf")
+    savefig(fig3, OUT_DIR / f"residual_correlation_{split}.pdf")
+    print(f"Saved figures/residual_correlation_{split}.pdf")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt",  type=Path, default=None,
+                        help="Path to checkpoint (default: ddpm_best_large.pt)")
+    parser.add_argument("--split", type=str,  default="val",
+                        help="Dataset split to evaluate: val or test")
+    args = parser.parse_args()
+    main(args.ckpt, args.split)

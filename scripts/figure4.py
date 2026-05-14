@@ -30,7 +30,6 @@ from pathlib import Path
 SWEEP_NPZ  = Path("lorenz96/sweep/sweep_results.npz")
 ERRORS_NPZ = Path("lorenz96/sweep/sweep_errors.npz")
 MVN_NPZ    = Path("lorenz96/sweep/mvn_results.npz")
-DYN_NPZ    = Path("lorenz96/sweep/dyn_results.npz")
 OUT_DIR    = Path("figures/main")
 OUT_DIR.mkdir(exist_ok=True)
 
@@ -143,19 +142,6 @@ def plot():
             mvn_crps_lo, mvn_crps_hi = _align_mvn_ci(m["crps_skill_dist"])
             mvn_vs_lo,   mvn_vs_hi   = _align_mvn_ci(m["vs_skill_dist"])
 
-    # ── Dynamical baseline ────────────────────────────────────────────────────
-    has_dyn = DYN_NPZ.exists()
-    if has_dyn:
-        dn        = np.load(DYN_NPZ)
-        dyn_leads = dn["lead_values"].tolist()
-        dyn_crps  = dn["crps_skill"]   # (n_leads,)
-        dyn_vs    = dn["vs_skill"]     # (n_leads,)
-        alpha_dyn = (100 - CI_PCT) / 2
-        dyn_crps_lo = np.nanpercentile(dn["crps_skill_dist"], alpha_dyn,       axis=1)
-        dyn_crps_hi = np.nanpercentile(dn["crps_skill_dist"], 100 - alpha_dyn, axis=1)
-        dyn_vs_lo   = np.nanpercentile(dn["vs_skill_dist"],   alpha_dyn,       axis=1)
-        dyn_vs_hi   = np.nanpercentile(dn["vs_skill_dist"],   100 - alpha_dyn, axis=1)
-
     has_errors = ERRORS_NPZ.exists()
     if has_errors:
         e     = np.load(ERRORS_NPZ)
@@ -260,18 +246,6 @@ def plot():
                                     mvn_vs_lo[col][mvn_ok], mvn_vs_hi[col][mvn_ok],
                                     color=VS_COLOR,   alpha=0.07, linewidth=0)
 
-        # ── Dynamical baseline horizontal lines ───────────────────────────
-        h_crps_dyn = h_vs_dyn = None
-        if has_dyn and lead in dyn_leads:
-            di  = dyn_leads.index(lead)
-            dkw = dict(linewidth=1.0, alpha=0.80, linestyle="-.")
-            h_crps_dyn = ax.axhline(dyn_crps[di], color=CRPS_COLOR, **dkw)
-            h_vs_dyn   = ax.axhline(dyn_vs[di],   color=VS_COLOR,   **dkw)
-            ax.axhspan(dyn_crps_lo[di], dyn_crps_hi[di],
-                       color=CRPS_COLOR, alpha=0.07, linewidth=0)
-            ax.axhspan(dyn_vs_lo[di],   dyn_vs_hi[di],
-                       color=VS_COLOR,   alpha=0.07, linewidth=0)
-
         ax.set_xscale("log")
         h_era5 = ax.axvline(ERA5_YEARS, color=ERA5_COLOR, linewidth=1.0, linestyle="-",
                             zorder=3)
@@ -284,24 +258,14 @@ def plot():
         if col == 0:
             ax.set_ylabel("Skill score", fontsize=FS_LABEL)
             # Save handles for figure-level legend (placed between rows after layout)
-            fig_leg_handles = [h_crps_d, h_vs_d, h_era5]
-            fig_leg_labels  = ["CRPS skill (DDPM)", "VS skill (DDPM)", "ERA5  (1940–present)"]
-            if h_crps_m is not None and h_crps_dyn is not None:
-                fig_leg_handles = [h_crps_d, h_crps_m, h_crps_dyn,
-                                   h_vs_d,   h_vs_m,   h_vs_dyn,   h_era5]
-                fig_leg_labels  = ["CRPS (DDPM)", "CRPS (MVN)", "CRPS (Dyn)",
-                                   "VS (DDPM)",   "VS (MVN)",   "VS (Dyn)",
-                                   "ERA5  (1940–present)"]
-            elif h_crps_m is not None:
+            if h_crps_m is not None:
                 fig_leg_handles = [h_crps_d, h_crps_m, h_vs_d, h_vs_m, h_era5]
                 fig_leg_labels  = ["CRPS skill (DDPM)", "CRPS skill (MVN)",
                                    "VS skill (DDPM)",   "VS skill (MVN)",
                                    "ERA5  (1940–present)"]
-            elif h_crps_dyn is not None:
-                fig_leg_handles = [h_crps_d, h_crps_dyn, h_vs_d, h_vs_dyn, h_era5]
-                fig_leg_labels  = ["CRPS (DDPM)", "CRPS (Dyn)",
-                                   "VS (DDPM)",   "VS (Dyn)",
-                                   "ERA5  (1940–present)"]
+            else:
+                fig_leg_handles = [h_crps_d, h_vs_d, h_era5]
+                fig_leg_labels  = ["CRPS skill (DDPM)", "VS skill (DDPM)", "ERA5  (1940–present)"]
 
         ax.set_title(top_lbl, fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
         ax.tick_params(axis="both", labelsize=FS_TICK)
