@@ -33,7 +33,7 @@ CKPT_DIR  = os.path.join(os.path.dirname(__file__), "checkpoints")
 DATA_PATH = "lorenz96/data/l96_trajectory.npz"
 OUT_PATH  = os.path.join(os.path.dirname(__file__), "mvn_results.npz")
 N_EVAL    = 200
-N_ENS     = 100
+N_ENS     = 20   # match DDPM and dynamical ensemble size
 N_BOOT    = 1000
 SEED      = 42
 

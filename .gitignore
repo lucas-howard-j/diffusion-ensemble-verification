@@ -27,6 +27,9 @@ data/processed/eof_ssh.npz
 data/processed/eof_sst.npz
 # Included: eof_wind.npz (9.8MB), nao_weekly.csv, enso_nino34_weekly.csv
 
+# Cached results (reproducible; e.g. vs_per_pair.py --cached)
+results/*.npz
+
 # L96/L63 runtime data and checkpoints
 lorenz96/data/
 lorenz96/checkpoints/
