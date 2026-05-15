@@ -38,7 +38,7 @@ from src.evaluation.gauge_comparison import build_gauge_series
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 
-N_MEMBERS = 25
+N_MEMBERS = 500
 N_BOOT    = 500
 SEED      = 42
 OUT_DIR   = Path("figures")

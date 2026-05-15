@@ -27,8 +27,8 @@ from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 from src.evaluation.metrics import block_bootstrap_ci
 
-N_MEMBERS  = 25
-BLOCK_SIZE = 8     # weeks; moving-block bootstrap block length
+N_MEMBERS  = 500
+BLOCK_SIZE = 3     # weeks; matches ~2–3wk score decorrelation time (consistent with figure3.py)
 N_BOOT     = 1000  # bootstrap resamples
 CI_ALPHA   = 0.05  # 95 % CI
 OUT_DIR = Path("figures")
@@ -95,7 +95,7 @@ def _energy_score(members: np.ndarray, obs: np.ndarray) -> float:
     m, y = members[:, valid], obs[valid]
     M = m.shape[0]
     term1 = np.linalg.norm(m - y[None, :], axis=1).mean()
-    # unbiased pairwise term via broadcasting; M=25 so (25,25,d) is fine
+    # unbiased pairwise term via broadcasting
     diffs = m[:, None, :] - m[None, :, :]          # (M, M, d)
     pair_norms = np.linalg.norm(diffs, axis=2)      # (M, M)
     off = ~np.eye(M, dtype=bool)

@@ -31,7 +31,7 @@ from src.evaluation.metrics import pearson_r, pairwise_corr_matrix, pattern_corr
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 
-N_MEMBERS = 25
+N_MEMBERS = 500
 OUT_DIR = Path("figures")
 OUT_DIR.mkdir(exist_ok=True)
 

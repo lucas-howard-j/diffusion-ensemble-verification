@@ -31,7 +31,7 @@ from src.config import LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 
-N_MEMBERS  = 25
+N_MEMBERS  = 500
 N_PLOT_BINS = 10   # 10 equal percentile bins (0–10%, 10–20%, …, 90–100%)
 OUT_DIR = Path("figures/supplement")
 OUT_DIR.mkdir(exist_ok=True, parents=True)

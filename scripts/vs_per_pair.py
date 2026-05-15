@@ -30,7 +30,7 @@ from src.config import LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 
-N_MEMBERS  = 25
+N_MEMBERS  = 500
 N_BOOT     = 2000
 BLOCK_SIZES = [3, 5, 8]
 OUT_DIR    = Path("figures")

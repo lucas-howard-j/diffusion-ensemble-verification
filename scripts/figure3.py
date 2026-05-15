@@ -33,7 +33,7 @@ from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 from src.evaluation.metrics import block_bootstrap_ci
 
-N_MEMBERS  = 25
+N_MEMBERS  = 500
 BLOCK_SIZE = 3      # weeks; matches ~2–3wk score decorrelation time
 N_BOOT     = 1000
 CI_ALPHA   = 0.05
