@@ -257,7 +257,6 @@ def plot():
 
         if col == 0:
             ax.set_ylabel("Skill score", fontsize=FS_LABEL)
-            # Save handles for figure-level legend (placed between rows after layout)
             if h_crps_m is not None:
                 fig_leg_handles = [h_crps_d, h_crps_m, h_vs_d, h_vs_m, h_era5]
                 fig_leg_labels  = ["CRPS skill (DDPM)", "CRPS skill (MVN)",
@@ -375,14 +374,10 @@ def plot():
             transform=fig.transFigure,
         )
 
-    # ── Figure-level legend centered between the two rows ────────────────────
-    top_row_bot = min(ax.get_position().y0 for ax in top_axes)
-    bot_row_top = max(ax.get_position().y1 for ax in bot_axes)
-    legend_y    = (top_row_bot + bot_row_top) / 2
-
+    # ── Figure-level legend below bottom row ─────────────────────────────────
     fig.legend(fig_leg_handles, fig_leg_labels,
-               loc="center", bbox_to_anchor=(0.5, legend_y),
-               ncol=len(fig_leg_handles),
+               loc="upper center", bbox_to_anchor=(0.5, -0.01),
+               ncol=4,
                fontsize=FS_LEG, frameon=True, framealpha=0.95,
                handlelength=2.2, handletextpad=0.4, columnspacing=0.9,
                borderpad=0.5)

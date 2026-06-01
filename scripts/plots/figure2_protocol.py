@@ -46,7 +46,7 @@ NR, NC = DDPM_ORIG.shape   # 3, 5
 CW, CH = 0.026, 0.10       # cell size in axes-fraction
 
 # ── Figure ─────────────────────────────────────────────────────────────────────
-fig = plt.figure(figsize=(7.0, 3.8))
+fig = plt.figure(figsize=(6.0, 3.8))
 ax  = fig.add_axes([0, 0, 1, 1])
 ax.set_xlim(0, 1)
 ax.set_ylim(0, 1)
@@ -91,7 +91,7 @@ D_SHUF_B = D_ORIG_B
 C_SHUF_B = C_ORIG_B
 SHUF_R = SHUF_L + NC * CW        # 0.475
 
-CMP_L = 0.530   # comparison section left edge
+CMP_L = 0.560   # comparison section left edge
 SH_MX = (ORIG_R + SHUF_L) / 2   # midpoint of arrow section
 
 # ── Track labels ──────────────────────────────────────────────────────────────
@@ -148,42 +148,11 @@ ax.plot([BK_X, CMP_L - 0.01], [DIV_Y, DIV_Y], color=C_GRAY, lw=1.2,
 farrow(ax, (CMP_L - 0.005, DIV_Y), (CMP_L - 0.015, DIV_Y), C_GRAY, lw=1.2, ms=9)
 
 # ── Comparison section ────────────────────────────────────────────────────────
-ax.text(CMP_L, 0.96,
+ax.text(CMP_L, 0.50,
         r"$\Delta = \mathrm{Score(original)} - \mathrm{Score(shuffled)}$",
-        ha="left", va="top", fontsize=5.5, color="#777777",
-        style="italic", transform=ax.transAxes)
-
-# Thin divider
-ax.plot([CMP_L - 0.01, 0.975], [DIV_Y, DIV_Y],
-        color="#dddddd", lw=0.6, transform=ax.transAxes, clip_on=False)
-
-# ES result (above divider)
-ES_Y = (D_CY + DIV_Y) / 2
-ax.text(CMP_L, ES_Y + 0.10,
-        r"$\Delta_{\mathrm{DDPM}}^{\mathrm{ES}}\;\approx\;\Delta_{\mathrm{clim}}^{\mathrm{ES}}$",
-        ha="left", va="center", fontsize=7.5, color="#222222",
+        ha="left", va="center", fontsize=7.0, color="#333333",
         transform=ax.transAxes)
-ax.text(CMP_L, ES_Y - 0.02,
-        "marginal information dominates ES",
-        ha="left", va="center", fontsize=5.5, color="#666666",
-        style="italic", transform=ax.transAxes)
 
-# VS result (below divider)
-VS_Y = (DIV_Y + C_CY) / 2
-ax.text(CMP_L, VS_Y + 0.10,
-        r"$\Delta_{\mathrm{DDPM}}^{\mathrm{VS}}\;>\;\Delta_{\mathrm{clim}}^{\mathrm{VS}}$",
-        ha="left", va="center", fontsize=7.5, color="#222222",
-        transform=ax.transAxes)
-ax.text(CMP_L, VS_Y - 0.02,
-        "VS detects joint structure",
-        ha="left", va="center", fontsize=5.5, color="#666666",
-        style="italic", transform=ax.transAxes)
-
-# ── Footnote ──────────────────────────────────────────────────────────────────
-ax.text(0.5, 0.01,
-        "Applied to SSH case study (8 NOAA tide gauges, §2.2)",
-        ha="center", va="bottom", fontsize=5.5, color="#aaaaaa",
-        transform=ax.transAxes)
 
 # ── Save ──────────────────────────────────────────────────────────────────────
 fig.savefig(OUT_DIR / "figure1.pdf", bbox_inches="tight")
