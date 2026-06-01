@@ -31,6 +31,7 @@ from src.config import LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 from src.evaluation.metrics import block_bootstrap_ci
+from src.evaluation.scores import crps, energy_score, variogram_score
 
 N_MEMBERS  = 25
 BLOCK_SIZE = 3
@@ -47,37 +48,6 @@ _CLIM_COLOR      = "#555555"
 _BAR_COLORS = [_DDPM_COLOR, _DDPM_SHUF_COLOR, _CLIM_COLOR]
 _BAR_LABELS = ["DDPM", "DDPM shuffled", "GLORYS draw shuffled"]
 _BAR_COLS   = [0, 1, 3]
-
-
-# ── Scoring functions ────────────────────────────────────────────────────────
-
-def _crps(members: np.ndarray, obs: np.ndarray) -> np.ndarray:
-    M = members.shape[0]
-    term1 = np.mean(np.abs(members - obs[None, :]), axis=0)
-    diff  = np.abs(members[:, None, :] - members[None, :, :])
-    off   = ~np.eye(M, dtype=bool)
-    term2 = diff[off].reshape(M * (M - 1), -1).mean(axis=0) / 2
-    return term1 - term2
-
-
-def _energy_score(members: np.ndarray, obs: np.ndarray) -> float:
-    M = members.shape[0]
-    term1 = np.linalg.norm(members - obs[None, :], axis=1).mean()
-    diffs = members[:, None, :] - members[None, :, :]
-    term2 = np.linalg.norm(diffs, axis=2)[~np.eye(M, dtype=bool)].mean() / 2
-    return float(term1 - term2)
-
-
-def _variogram_score(members: np.ndarray, obs: np.ndarray, p: float = 0.5) -> float:
-    d = obs.shape[0]
-    vs, n_pairs = 0.0, 0
-    for i in range(d):
-        for j in range(i + 1, d):
-            obs_diff  = abs(float(obs[i]) - float(obs[j])) ** p
-            ens_diffs = np.abs(members[:, i] - members[:, j]) ** p
-            vs += (obs_diff - ens_diffs.mean()) ** 2
-            n_pairs += 1
-    return float(vs / n_pairs)
 
 
 def _shuffle_columns(arr: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -154,24 +124,24 @@ def run_inference(ckpt_path: Path | None, split: str) -> dict:
                 rng_ref = _ref_rng(t_val, lead)
 
                 ref_members   = pool[rng_ref.choice(len(pool), N_MEMBERS, replace=True)]
-                row_crps_d[j] = _crps(members,     true)
-                row_crps_r[j] = _crps(ref_members, true)
+                row_crps_d[j] = crps(members,     true)
+                row_crps_r[j] = crps(ref_members, true)
 
                 if len(pool) >= 2:
                     shuf_ddpm = _shuffle_columns(members,     shuf_rng)
                     clim      = pool[rng_ref.choice(len(pool), N_MEMBERS, replace=True)]
                     shuf_clim = _shuffle_columns(clim, shuf_rng)
                     row_es[j] = [
-                        _energy_score(members,   true),
-                        _energy_score(shuf_ddpm, true),
-                        _energy_score(clim,      true),
-                        _energy_score(shuf_clim, true),
+                        energy_score(members,   true),
+                        energy_score(shuf_ddpm, true),
+                        energy_score(clim,      true),
+                        energy_score(shuf_clim, true),
                     ]
                     row_vs[j] = [
-                        _variogram_score(members,   true),
-                        _variogram_score(shuf_ddpm, true),
-                        _variogram_score(clim,      true),
-                        _variogram_score(shuf_clim, true),
+                        variogram_score(members,   true),
+                        variogram_score(shuf_ddpm, true),
+                        variogram_score(clim,      true),
+                        variogram_score(shuf_clim, true),
                     ]
 
             crps_ddpm_rec.append(row_crps_d)

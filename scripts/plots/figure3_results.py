@@ -28,6 +28,7 @@ from src.config import LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 from src.evaluation.metrics import block_bootstrap_ci
+from src.evaluation.scores import crps, energy_score, variogram_score
 
 N_MEMBERS  = 500
 BLOCK_SIZE = 8
@@ -39,49 +40,6 @@ OUT_DIR.mkdir(exist_ok=True)
 LEADS = sorted(LEAD_WEEKS)
 GAUGE_NAMES = [g["name"] for g in TIDE_GAUGES]
 SHORT = [g["name"].split("_")[0] for g in TIDE_GAUGES]
-
-# ── Score functions ───────────────────────────────────────────────────────────
-
-def _crps(members: np.ndarray, obs: np.ndarray) -> np.ndarray:
-    """CRPS per station. members (M, d), obs (d,) → (d,)."""
-    M = members.shape[0]
-    t1 = np.mean(np.abs(members - obs[None, :]), axis=0)
-    diff = np.abs(members[:, None, :] - members[None, :, :])
-    off  = ~np.eye(M, dtype=bool)
-    t2   = diff[off].reshape(M * (M - 1), -1).mean(axis=0) / 2
-    return t1 - t2
-
-
-def _energy_score(members: np.ndarray, obs: np.ndarray) -> float:
-    """ES for one forecast. members (M, d), obs (d,)."""
-    valid = np.isfinite(obs)
-    if valid.sum() < 2:
-        return np.nan
-    m, y = members[:, valid], obs[valid]
-    M = m.shape[0]
-    t1 = np.linalg.norm(m - y[None, :], axis=1).mean()
-    diffs = m[:, None, :] - m[None, :, :]
-    off   = ~np.eye(M, dtype=bool)
-    t2    = np.linalg.norm(diffs, axis=2)[off].mean() / 2
-    return float(t1 - t2)
-
-
-def _variogram_score(members: np.ndarray, obs: np.ndarray, p: float = 0.5) -> float:
-    """VS (Scheuerer & Hamill 2015, p=0.5, equal weights). members (M, d), obs (d,)."""
-    valid = np.isfinite(obs)
-    if valid.sum() < 2:
-        return np.nan
-    m, y = members[:, valid], obs[valid]
-    d = y.shape[0]
-    vs, n_pairs = 0.0, 0
-    for i in range(d):
-        for j in range(i + 1, d):
-            obs_diff  = abs(float(y[i]) - float(y[j])) ** p
-            ens_diffs = np.abs(m[:, i] - m[:, j]) ** p
-            vs += (obs_diff - ens_diffs.mean()) ** 2
-            n_pairs += 1
-    return float(vs / n_pairs)
-
 
 # ── Inference ─────────────────────────────────────────────────────────────────
 
@@ -143,8 +101,8 @@ def run_inference(ckpt_path: Path, split: str) -> dict:
                 ref_members = pool[rng.choice(len(pool), N_MEMBERS, replace=True)]
 
                 # CRPS
-                crps_ddpm_rec[ii, ji] = _crps(members, true)
-                crps_ref_rec[ii, ji]  = _crps(ref_members, true)
+                crps_ddpm_rec[ii, ji] = crps(members, true)
+                crps_ref_rec[ii, ji]  = crps(ref_members, true)
 
                 # Shuffled members (destroy joint structure)
                 shuf = members.copy()
@@ -155,14 +113,14 @@ def run_inference(ckpt_path: Path, split: str) -> dict:
                     ref_shuf[:, k] = ref_members[rng.permutation(N_MEMBERS), k]
 
                 # ES
-                es_rec[ii, ji, 0] = _energy_score(members,     true)
-                es_rec[ii, ji, 1] = _energy_score(shuf,        true)
-                es_rec[ii, ji, 2] = _energy_score(ref_shuf,    true)
+                es_rec[ii, ji, 0] = energy_score(members,     true)
+                es_rec[ii, ji, 1] = energy_score(shuf,        true)
+                es_rec[ii, ji, 2] = energy_score(ref_shuf,    true)
 
                 # VS
-                vs_rec[ii, ji, 0] = _variogram_score(members,  true)
-                vs_rec[ii, ji, 1] = _variogram_score(shuf,     true)
-                vs_rec[ii, ji, 2] = _variogram_score(ref_shuf, true)
+                vs_rec[ii, ji, 0] = variogram_score(members,  true)
+                vs_rec[ii, ji, 1] = variogram_score(shuf,     true)
+                vs_rec[ii, ji, 2] = variogram_score(ref_shuf, true)
 
     # ES/VS clim reference (unshuffled GLORYS draw) — separate pass for skill denom
     es_clim = np.zeros((len(valid_ts), len(LEADS)))
@@ -174,8 +132,8 @@ def run_inference(ckpt_path: Path, split: str) -> dict:
                 month       = ds.time[t_val + lead].month
                 pool        = glorys_pool[month]
                 ref_members = pool[rng2.choice(len(pool), N_MEMBERS, replace=True)]
-                es_clim[ii, ji] = _energy_score(ref_members, targets[ji])
-                vs_clim[ii, ji] = _variogram_score(ref_members, targets[ji])
+                es_clim[ii, ji] = energy_score(ref_members, targets[ji])
+                vs_clim[ii, ji] = variogram_score(ref_members, targets[ji])
 
     return dict(
         crps_ddpm=crps_ddpm_rec, crps_ref=crps_ref_rec,

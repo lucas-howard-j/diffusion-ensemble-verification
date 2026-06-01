@@ -26,6 +26,7 @@ from src.data.gauge_loader import load_gauges
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
 from src.evaluation.metrics import block_bootstrap_ci
+from src.evaluation.scores import energy_score, variogram_score
 
 N_MEMBERS  = 500
 BLOCK_SIZE = 3     # weeks; matches ~2–3wk score decorrelation time (consistent with figure3.py)
@@ -39,28 +40,6 @@ def savefig(fig, path, **kwargs):
     path = Path(path)
     fig.savefig(path.with_suffix(".pdf"), bbox_inches="tight", **kwargs)
     fig.savefig(path.with_suffix(".png"), dpi=150, bbox_inches="tight", **kwargs)
-
-
-def _variogram_score(members: np.ndarray, obs: np.ndarray, p: float = 0.5) -> float:
-    """Variogram score (Scheuerer & Hamill 2015) for one forecast.
-    members : (M, d)   obs : (d,)
-    Equal weights w_ij = 1/n_pairs across all i<j station pairs.
-    Lower is better; skill = 1 - VS/VS_ref.
-    """
-    valid = np.isfinite(obs)
-    if valid.sum() < 2:
-        return np.nan
-    m, y = members[:, valid], obs[valid]
-    d = y.shape[0]
-    vs = 0.0
-    n_pairs = 0
-    for i in range(d):
-        for j in range(i + 1, d):
-            obs_diff  = abs(float(y[i]) - float(y[j])) ** p
-            ens_diffs = np.abs(m[:, i] - m[:, j]) ** p
-            vs += (obs_diff - ens_diffs.mean()) ** 2
-            n_pairs += 1
-    return float(vs / n_pairs)
 
 
 def _variogram_score_per_pair(
@@ -83,24 +62,6 @@ def _variogram_score_per_pair(
                 out[k] = (obs_diff - ens_diffs.mean()) ** 2
             k += 1
     return out
-
-
-def _energy_score(members: np.ndarray, obs: np.ndarray) -> float:
-    """Energy score for one forecast: members (M, d), obs (d,).
-    Stations with NaN obs are dropped before scoring.
-    """
-    valid = np.isfinite(obs)
-    if valid.sum() < 2:
-        return np.nan
-    m, y = members[:, valid], obs[valid]
-    M = m.shape[0]
-    term1 = np.linalg.norm(m - y[None, :], axis=1).mean()
-    # unbiased pairwise term via broadcasting
-    diffs = m[:, None, :] - m[None, :, :]          # (M, M, d)
-    pair_norms = np.linalg.norm(diffs, axis=2)      # (M, M)
-    off = ~np.eye(M, dtype=bool)
-    term2 = pair_norms[off].mean() / 2
-    return float(term1 - term2)
 
 
 def main(ckpt_path: Path | None = None, split: str = "val") -> None:
@@ -206,21 +167,21 @@ def main(ckpt_path: Path | None = None, split: str = "val") -> None:
                 )[station_indices]
 
                 # Energy score vs GLORYS target: original, shuffled, GLORYS draw
-                es_orig = _energy_score(member_vals, glorys_target)
+                es_orig = energy_score(member_vals, glorys_target)
                 shuffled = member_vals.copy()
                 for k in range(n_st):
                     shuffled[:, k] = member_vals[rng.permutation(N_MEMBERS), k]
-                es_shuf = _energy_score(shuffled, glorys_target)
+                es_shuf = energy_score(shuffled, glorys_target)
 
                 target_month = ym.month
                 pool = glorys_pool.get(target_month, np.empty((0, n_st)))
                 if len(pool) >= 2:
                     glorys_members = pool[rng.choice(len(pool), N_MEMBERS, replace=True)]
-                    es_clim = _energy_score(glorys_members, glorys_target)
+                    es_clim = energy_score(glorys_members, glorys_target)
                     glorys_shuf = glorys_members.copy()
                     for k in range(n_st):
                         glorys_shuf[:, k] = glorys_members[rng.permutation(N_MEMBERS), k]
-                    es_clim_shuf = _energy_score(glorys_shuf, glorys_target)
+                    es_clim_shuf = energy_score(glorys_shuf, glorys_target)
                 else:
                     es_clim = es_clim_shuf = np.nan
 
@@ -228,11 +189,11 @@ def main(ckpt_path: Path | None = None, split: str = "val") -> None:
                     es_records[lead].append((es_orig, es_shuf, es_clim, es_clim_shuf))
 
                 # Variogram score (p=0.5)
-                vs_orig = _variogram_score(member_vals, glorys_target)
-                vs_shuf = _variogram_score(shuffled,    glorys_target)
+                vs_orig = variogram_score(member_vals, glorys_target)
+                vs_shuf = variogram_score(shuffled,    glorys_target)
                 if len(pool) >= 2:
-                    vs_clim      = _variogram_score(glorys_members, glorys_target)
-                    vs_clim_shuf = _variogram_score(glorys_shuf,    glorys_target)
+                    vs_clim      = variogram_score(glorys_members, glorys_target)
+                    vs_clim_shuf = variogram_score(glorys_shuf,    glorys_target)
                 else:
                     vs_clim = vs_clim_shuf = np.nan
                 if all(np.isfinite(v) for v in (vs_orig, vs_shuf, vs_clim, vs_clim_shuf)):
