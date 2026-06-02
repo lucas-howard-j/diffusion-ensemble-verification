@@ -189,3 +189,43 @@ class TestVariogramScore:
         good = np.tile(obs, (M, 1)) + 0.01 * np.random.default_rng(5).standard_normal((M, D))
         bad = np.zeros((M, D))
         assert variogram_score(good, obs) < variogram_score(bad, obs)
+
+    def test_reduce_false_returns_array_of_correct_shape(self):
+        """reduce=False → shape (d*(d-1)//2,), matching np.triu_indices ordering."""
+        members = RNG.standard_normal((M, D))
+        obs     = RNG.standard_normal((D,))
+        out     = variogram_score(members, obs, reduce=False)
+        assert isinstance(out, np.ndarray)
+        assert out.shape == (D * (D - 1) // 2,)
+
+    def test_reduce_false_nan_where_obs_nan(self):
+        """Pairs where either station obs is NaN appear as NaN in the output."""
+        members = RNG.standard_normal((M, D))
+        obs     = RNG.standard_normal((D,))
+        obs[0]  = np.nan                             # station 0 invalid
+        out     = variogram_score(members, obs, reduce=False)
+        triu_i, triu_j = np.triu_indices(D, k=1)
+        nan_mask = (triu_i == 0) | (triu_j == 0)    # all pairs involving station 0
+        assert np.all(np.isnan(out[nan_mask]))
+        assert np.all(np.isfinite(out[~nan_mask]))
+
+    def test_reduce_false_nanmean_matches_reduce_true(self):
+        """nanmean of reduce=False output equals the reduce=True scalar."""
+        members = RNG.standard_normal((M, D))
+        obs     = RNG.standard_normal((D,))
+        per_pair = variogram_score(members, obs, reduce=False)
+        scalar   = variogram_score(members, obs, reduce=True)
+        np.testing.assert_allclose(np.nanmean(per_pair), scalar, rtol=1e-10)
+
+    def test_reduce_false_ordering_matches_triu_indices(self):
+        """Index k in reduce=False output corresponds to np.triu_indices(d, k=1) pair k.
+
+        All members = 1 so ens_diff = 0. obs[i] = i so obs_diff = |i-j|^0.5.
+        For pair (2, 5): term = (|2-5|^0.5 - 0)^2 = 3.0.
+        """
+        members = np.ones((M, D))
+        obs     = np.arange(D, dtype=float)
+        triu_i, triu_j = np.triu_indices(D, k=1)
+        k25 = int(np.where((triu_i == 2) & (triu_j == 5))[0])
+        out = variogram_score(members, obs, reduce=False)
+        np.testing.assert_allclose(out[k25], 3.0, rtol=1e-10)

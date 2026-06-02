@@ -69,8 +69,9 @@ def energy_score(members: np.ndarray, obs: np.ndarray) -> float:
 
 
 def variogram_score(
-    members: np.ndarray, obs: np.ndarray, p: float = 0.5
-) -> float:
+    members: np.ndarray, obs: np.ndarray, p: float = 0.5,
+    reduce: bool = True,
+) -> "float | np.ndarray":
     """Variogram Score (Scheuerer & Hamill 2015), equal weights.
 
     Parameters
@@ -78,24 +79,30 @@ def variogram_score(
     members : (M, d)
     obs     : (d,)
     p       : power (default 0.5 per paper convention)
+    reduce  : if True (default) return a scalar mean over all valid pairs;
+              if False return shape (d*(d-1)//2,) with NaN for pairs where
+              either obs value is NaN — preserving original pair ordering so
+              index k corresponds to np.triu_indices(d, k=1) pair k.
 
     Returns
     -------
-    float — VS value; np.nan if fewer than 2 valid stations.
+    float (reduce=True)  — VS value; np.nan if fewer than 1 valid pair.
+    np.ndarray (reduce=False) — per-pair squared terms, shape (d*(d-1)//2,).
     """
     members = np.asarray(members, dtype=float)
-    obs = np.asarray(obs, dtype=float)
-    valid = np.isfinite(obs)
-    if valid.sum() < 2:
-        return float(np.nan)
-    m, y = members[:, valid], obs[valid]
-    d = y.shape[0]
-    vs = 0.0
-    n_pairs = 0
+    obs     = np.asarray(obs,     dtype=float)
+    d       = obs.shape[0]
+    n_pairs = d * (d - 1) // 2
+    out     = np.full(n_pairs, np.nan)
+    k = 0
     for i in range(d):
         for j in range(i + 1, d):
-            obs_diff = abs(float(y[i]) - float(y[j])) ** p
-            ens_diffs = np.abs(m[:, i] - m[:, j]) ** p
-            vs += (obs_diff - ens_diffs.mean()) ** 2
-            n_pairs += 1
-    return float(vs / n_pairs) if n_pairs > 0 else float(np.nan)
+            if np.isfinite(obs[i]) and np.isfinite(obs[j]):
+                obs_diff  = abs(float(obs[i]) - float(obs[j])) ** p
+                ens_diffs = np.abs(members[:, i] - members[:, j]) ** p
+                out[k]    = (obs_diff - ens_diffs.mean()) ** 2
+            k += 1
+    if not reduce:
+        return out
+    valid = out[np.isfinite(out)]
+    return float(valid.mean()) if len(valid) >= 1 else float(np.nan)

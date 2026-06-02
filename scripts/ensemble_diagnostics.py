@@ -42,27 +42,6 @@ def savefig(fig, path, **kwargs):
     fig.savefig(path.with_suffix(".png"), dpi=150, bbox_inches="tight", **kwargs)
 
 
-def _variogram_score_per_pair(
-    members: np.ndarray, obs: np.ndarray, p: float = 0.5
-) -> np.ndarray:
-    """Per-pair VS contributions for one forecast. Returns shape (n_pairs,) where
-    n_pairs = d*(d-1)/2 over ALL d stations (original ordering). Pairs where either
-    obs is NaN are returned as NaN. No normalization — caller averages across inits.
-    members : (M, d)  obs : (d,)
-    """
-    d = obs.shape[0]
-    n_pairs = d * (d - 1) // 2
-    out = np.full(n_pairs, np.nan)
-    k = 0
-    for i in range(d):
-        for j in range(i + 1, d):
-            if np.isfinite(obs[i]) and np.isfinite(obs[j]):
-                obs_diff  = abs(float(obs[i]) - float(obs[j])) ** p
-                ens_diffs = np.abs(members[:, i] - members[:, j]) ** p
-                out[k] = (obs_diff - ens_diffs.mean()) ** 2
-            k += 1
-    return out
-
 
 def main(ckpt_path: Path | None = None, split: str = "val") -> None:
     model, schedule, ckpt, device = load_checkpoint(ckpt_path)
@@ -201,8 +180,8 @@ def main(ckpt_path: Path | None = None, split: str = "val") -> None:
 
                 # Per-pair contributions (always collect when pool is available)
                 if len(pool) >= 2:
-                    ddpm_pairs = _variogram_score_per_pair(member_vals, glorys_target)
-                    clim_pairs = _variogram_score_per_pair(glorys_members, glorys_target)
+                    ddpm_pairs = variogram_score(member_vals,    glorys_target, reduce=False)
+                    clim_pairs = variogram_score(glorys_members, glorys_target, reduce=False)
                     vs_pair_records[lead].append((ddpm_pairs, clim_pairs))
 
                 for k, s in enumerate(station_names):
