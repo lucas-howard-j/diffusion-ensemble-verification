@@ -2,3 +2,6 @@
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "integration: tests requiring the trained checkpoint (~3s, skipped if absent)",
+]
