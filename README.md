@@ -93,10 +93,10 @@ PYTHONPATH=. python scripts/figure3.py --split test
 PYTHONPATH=. python scripts/figure4.py
 
 # Figure 1 — Verification protocol schematic
-PYTHONPATH=. python scripts/plots/figure2_protocol.py
+PYTHONPATH=. python scripts/plots/figure1_protocol.py
 
-# Figure 2 — Domain map
-PYTHONPATH=. python scripts/plots/figure1_domain_map.py
+# Figure 2 — Domain map + per-pair VS diagnostic
+PYTHONPATH=. python scripts/plots/figure2_domain_map.py
 ```
 
 Publication figures are written to `figures/main/`.
