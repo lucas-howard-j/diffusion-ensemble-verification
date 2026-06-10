@@ -1,5 +1,5 @@
 """
-Figure 2: Permutation protocol for separating marginal from joint forecast skill.
+Figure 1: Permutation protocol for separating marginal from joint forecast skill.
 
 The key comparison is the relative drop in scores:
   Δ = Score(original) − Score(shuffled)
@@ -8,7 +8,7 @@ ES: Δ_DDPM ≈ Δ_clim  → marginal information dominates ES
 VS: Δ_DDPM > Δ_clim  → VS detects DDPM joint structure above climatology
 
 Run from project root:
-    PYTHONPATH=. python scripts/plots/figure2_protocol.py
+    PYTHONPATH=. python scripts/plots/figure1_protocol.py
 """
 import numpy as np
 import matplotlib

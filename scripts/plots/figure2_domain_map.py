@@ -7,7 +7,7 @@ VS failure = 1 − VS_DDPM / VS_clim (ratio-of-means over inits × leads, test s
 Requires: results/vs_per_pair_test.npz  (run scripts/vs_per_pair.py --cached first)
 
 Run:
-    PYTHONPATH=. python scripts/plots/figure1_domain_map.py
+    PYTHONPATH=. python scripts/plots/figure2_domain_map.py
 """
 from pathlib import Path
 
