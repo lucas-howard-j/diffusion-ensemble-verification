@@ -6,8 +6,10 @@ No data files or checkpoints are loaded.
 import numpy as np
 import pytest
 import torch
+import torch.nn as nn
 
 from src.model.diffusion import DDPMSchedule, _cosine_alpha_bars
+from src.config import BETA_START, BETA_END, BETA_SCHEDULE
 
 T_SMALL = 10
 T_MED = 100
@@ -17,7 +19,7 @@ class TestDDPMScheduleLinear:
 
     @pytest.fixture(scope="class")
     def sched(self):
-        return DDPMSchedule(T=T_SMALL, beta_start=1e-4, beta_end=0.02, schedule="linear")
+        return DDPMSchedule(T=T_SMALL, beta_start=BETA_START, beta_end=BETA_END, schedule=BETA_SCHEDULE)
 
     def test_alpha_bar_shape(self, sched):
         assert sched.alpha_bars.shape == (T_SMALL,)
@@ -121,6 +123,119 @@ class TestCosineAlphaBarsHelper:
     def test_monotone_decreasing(self):
         ab = _cosine_alpha_bars(50).numpy()
         assert np.all(np.diff(ab) < 0)
+
+
+class _ZeroNoisePredictor(nn.Module):
+    """Always predicts zero noise — lets p_sample's mean formula be verified exactly."""
+    def forward(self, x_t, t, cond):
+        return torch.zeros_like(x_t)
+
+
+class TestReverseDiffusion:
+    """Tests for p_sample (single denoising step) and sample (full reverse chain).
+
+    Uses a zero-noise predictor so the deterministic mean formula can be
+    checked analytically without a trained checkpoint.
+    """
+
+    @pytest.fixture(scope="class")
+    def sched(self):
+        return DDPMSchedule(T=T_SMALL, beta_start=BETA_START, beta_end=BETA_END,
+                            schedule=BETA_SCHEDULE)
+
+    @pytest.fixture(scope="class")
+    def zero_model(self):
+        return _ZeroNoisePredictor()
+
+    def test_p_sample_output_shape(self, sched, zero_model):
+        x_t = torch.randn(3, 4)
+        cond = torch.zeros(3, 1)
+        out = sched.p_sample(zero_model, x_t, t=0, cond=cond)
+        assert out.shape == x_t.shape
+
+    def test_p_sample_t0_deterministic(self, sched, zero_model):
+        """At t=0 no noise is injected — two identical calls must return the same tensor."""
+        x_t = torch.randn(2, 4)
+        cond = torch.zeros(2, 1)
+        out1 = sched.p_sample(zero_model, x_t, t=0, cond=cond)
+        out2 = sched.p_sample(zero_model, x_t, t=0, cond=cond)
+        torch.testing.assert_close(out1, out2)
+
+    def test_p_sample_t_gt_0_stochastic(self, sched, zero_model):
+        """At t>0, different torch seeds must produce different outputs."""
+        x_t = torch.randn(2, 4)
+        cond = torch.zeros(2, 1)
+        torch.manual_seed(0)
+        out1 = sched.p_sample(zero_model, x_t, t=5, cond=cond)
+        torch.manual_seed(1)
+        out2 = sched.p_sample(zero_model, x_t, t=5, cond=cond)
+        assert not torch.allclose(out1, out2)
+
+    def test_p_sample_zero_model_mean_formula(self, sched, zero_model):
+        """With eps=0, output at t=0 equals x_t / sqrt(alpha_0) (no noise term).
+
+        From the DDPM mean formula:
+            mean = (1/sqrt(alpha_t)) * (x_t - beta_t/sqrt(1-alpha_bar_t) * eps)
+        With eps=0 and t=0 (no stochastic term): output = x_t / sqrt(alpha_0).
+        """
+        torch.manual_seed(0)
+        x_t = torch.randn(2, 4)
+        cond = torch.zeros(2, 1)
+        out = sched.p_sample(zero_model, x_t, t=0, cond=cond)
+        expected = x_t / sched.alphas[0].sqrt()
+        torch.testing.assert_close(out, expected, atol=1e-6, rtol=1e-5)
+
+    def test_p_sample_nonzero_eps_mean_formula(self, sched):
+        """Full mean formula exercised with a constant non-zero eps predictor at t=0.
+
+        mean = (x_t - beta_0/sqrt(1-alpha_bar_0) * eps) / sqrt(alpha_0)
+
+        This catches bugs in the eps coefficient (wrong sign, using alpha instead
+        of beta, wrong schedule index) that the eps=0 test cannot detect.
+        """
+        class _ConstantEps(nn.Module):
+            def forward(self, x_t, t, cond):
+                return torch.full_like(x_t, 0.5)
+
+        model = _ConstantEps()
+        torch.manual_seed(0)
+        x_t  = torch.randn(2, 4)
+        cond = torch.zeros(2, 1)
+        t    = 0
+
+        out = sched.p_sample(model, x_t, t=t, cond=cond)
+
+        beta = sched.betas[t]
+        ab   = sched.alpha_bars[t]
+        eps  = torch.full_like(x_t, 0.5)
+        expected = (x_t - beta / (1.0 - ab).sqrt() * eps) / sched.alphas[t].sqrt()
+        torch.testing.assert_close(out, expected, atol=1e-6, rtol=1e-5)
+
+    def test_p_sample_output_finite(self, sched, zero_model):
+        x_t = torch.randn(4, 8)
+        cond = torch.zeros(4, 1)
+        for t in [0, T_SMALL // 2, T_SMALL - 1]:
+            assert torch.all(torch.isfinite(sched.p_sample(zero_model, x_t, t, cond)))
+
+    def test_sample_output_shape(self, sched, zero_model):
+        batch, d = 5, 8
+        cond = torch.zeros(batch, 1)
+        out = sched.sample(zero_model, cond, target_dim=d)
+        assert out.shape == (batch, d)
+
+    def test_sample_output_finite(self, sched, zero_model):
+        cond = torch.zeros(3, 1)
+        out = sched.sample(zero_model, cond, target_dim=4)
+        assert torch.all(torch.isfinite(out))
+
+    def test_sample_reproducible_with_seed(self, sched, zero_model):
+        """Two sample() calls with the same manual seed produce identical output."""
+        cond = torch.zeros(3, 1)
+        torch.manual_seed(7)
+        out1 = sched.sample(zero_model, cond, target_dim=4)
+        torch.manual_seed(7)
+        out2 = sched.sample(zero_model, cond, target_dim=4)
+        torch.testing.assert_close(out1, out2)
 
 
 class TestQSampleStatistics:

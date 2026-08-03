@@ -60,6 +60,11 @@ BETA_END     = 0.02
 BETA_SCHEDULE = "linear"   # "linear" or "cosine" (Nichol & Dhariwal 2021)
 LEAD_WEEKS  = [2, 4, 8, 12]
 
+
+def normalise_lead(lead: int, leads: list) -> float:
+    """Map a lead-time value to [0, 1] using the range of available leads."""
+    return (lead - min(leads)) / (max(leads) - min(leads) + 1e-8)
+
 # ── Training ──────────────────────────────────────────────────────────────────
 BATCH_SIZE   = 64
 LR           = 3e-5

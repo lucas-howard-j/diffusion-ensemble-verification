@@ -31,6 +31,7 @@ from src.config import (
     SSH_LAGS, SST_LAGS, ENSO_LAGS, NAO_LAGS,
     TRAIN_YEARS, VAL_YEARS, TEST_YEARS,
     TIDE_GAUGES, SSH_ANOM_WEEKLY,
+    normalise_lead,
 )
 from src.eof.compute_eofs import load_eofs
 from src.eof.compute_wind_eofs import load_wind_eofs
@@ -43,6 +44,7 @@ SPLITS = {
     "val":   list(VAL_YEARS),
     "test":  list(TEST_YEARS),
 }
+
 
 
 def _align_to(series: pd.Series, time_index: pd.DatetimeIndex) -> np.ndarray:
@@ -187,7 +189,7 @@ class SSHDiffusionDataset(Dataset):
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         t, lead = self.pairs[idx]
-        lead_norm = (lead - min(self.leads)) / (max(self.leads) - min(self.leads) + 1e-8)
+        lead_norm = normalise_lead(lead, self.leads)
 
         parts = []
 

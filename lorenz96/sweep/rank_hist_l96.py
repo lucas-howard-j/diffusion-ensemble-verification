@@ -227,7 +227,7 @@ def load_ddpm_model(ckpt_path: str, device: str):
 
 def run(n_train: int = N_TRAIN, sigma_ic_frac: float = SIGMA_IC_FRAC,
         sigma_model: float = SIGMA_MODEL, sigma_bias: float = 0.0):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Device: {device}  n_train={n_train:,}  N_ENS={N_ENS}  N_EVAL={N_EVAL}")
 
     states, _ = load_trajectory(DATA_PATH)

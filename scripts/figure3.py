@@ -330,7 +330,8 @@ def make_figure(scores: dict) -> None:
                       "(b) Energy score skill", "ES skill")
     _plot_score_lines(ax_c, vs_mean, vs_lo, vs_hi,
                       "(c) Variogram score skill", r"VS skill  ($p$=0.5)",
-                      zero_line=False, leg_outside=True)
+                      zero_line=True, leg_outside=True)
+    ax_c.set_ylim(top=0.1)
 
     err_kw = dict(elinewidth=0.6, capsize=2, ecolor="0.25")
 

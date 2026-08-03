@@ -4,23 +4,26 @@ The block_bootstrap_ci is used for all confidence intervals in the paper.
 No data files are loaded.
 """
 import numpy as np
+import pandas as pd
 import pytest
 
-from src.evaluation.metrics import block_bootstrap_ci, pearson_r, rmse
-
-RNG = np.random.default_rng(0)
+from src.evaluation.metrics import (
+    block_bootstrap_ci, pearson_r, rmse,
+    anomaly_correlation, upper_triangle, pairwise_corr_matrix, pattern_correlation,
+)
 
 
 class TestBlockBootstrapCI:
+    RNG = np.random.default_rng(0)
 
     def test_output_shapes(self):
-        x = RNG.standard_normal((50, 8))
+        x = self.RNG.standard_normal((50, 8))
         lo, hi = block_bootstrap_ci(x, block_size=5, n_boot=200, alpha=0.05)
         assert lo.shape == (8,)
         assert hi.shape == (8,)
 
     def test_lo_le_hi_everywhere(self):
-        x = RNG.standard_normal((50, 8))
+        x = self.RNG.standard_normal((50, 8))
         lo, hi = block_bootstrap_ci(x, block_size=5, n_boot=200, alpha=0.05)
         assert np.all(lo <= hi)
 
@@ -56,13 +59,13 @@ class TestBlockBootstrapCI:
 
     def test_ci_width_grows_with_confidence(self):
         """95% CI is wider than 80% CI."""
-        x = RNG.standard_normal((60, 4))
+        x = self.RNG.standard_normal((60, 4))
         lo_95, hi_95 = block_bootstrap_ci(x, block_size=5, n_boot=500, alpha=0.05)
         lo_80, hi_80 = block_bootstrap_ci(x, block_size=5, n_boot=500, alpha=0.20)
         assert np.all(hi_95 - lo_95 >= hi_80 - lo_80 - 1e-10)
 
     def test_seeded_rng_reproducible(self):
-        x = RNG.standard_normal((40, 3))
+        x = self.RNG.standard_normal((40, 3))
         lo1, hi1 = block_bootstrap_ci(x, block_size=4, n_boot=100, alpha=0.05,
                                        rng=np.random.default_rng(7))
         lo2, hi2 = block_bootstrap_ci(x, block_size=4, n_boot=100, alpha=0.05,
@@ -72,7 +75,7 @@ class TestBlockBootstrapCI:
 
     def test_sample_mean_inside_ci(self):
         """The sample mean must lie within its own bootstrap CI."""
-        x = RNG.standard_normal((50, 8))
+        x = self.RNG.standard_normal((50, 8))
         lo, hi = block_bootstrap_ci(x, block_size=5, n_boot=500, alpha=0.05)
         mean = x.mean(axis=0)
         assert np.all(lo <= mean + 1e-10)
@@ -125,3 +128,108 @@ class TestRMSE:
         obs = np.array([0.0, np.nan])
         pred = np.array([0.0, 99.0])
         assert abs(rmse(obs, pred)) < 1e-12
+
+
+class TestAnomalyCorrelation:
+    # NOTE: Pearson r is location-invariant, so subtracting nanmean from both
+    # series is a mathematical no-op — anomaly_correlation(obs, pred) is always
+    # equal to pearson_r(obs, pred). The tests below are correct but cannot
+    # distinguish the two implementations. Flagged so the function's intent
+    # (climatological anomaly removal) is reviewed if the implementation changes.
+
+    def test_mean_shift_ignored(self):
+        """Series differing only by a constant offset have identical anomalies → r=1."""
+        x = np.arange(10, dtype=float)
+        assert abs(anomaly_correlation(x, x + 5.0) - 1.0) < 1e-10
+
+    def test_sign_flip_gives_minus_one(self):
+        x = np.arange(1, 11, dtype=float)
+        assert abs(anomaly_correlation(x, -x) - (-1.0)) < 1e-10
+
+    def test_nan_when_too_few_valid_pairs(self):
+        obs  = np.array([1.0, np.nan, np.nan, np.nan])
+        pred = np.array([1.0, 2.0, 3.0, 4.0])
+        assert np.isnan(anomaly_correlation(obs, pred))
+
+    def test_returns_float_in_range(self):
+        rng = np.random.default_rng(1)
+        r = anomaly_correlation(rng.standard_normal(20), rng.standard_normal(20))
+        assert isinstance(r, float)
+        assert -1.0 - 1e-10 <= r <= 1.0 + 1e-10
+
+
+class TestUpperTriangle:
+
+    def test_known_3x3(self):
+        """triu_indices(3, k=1) picks positions (0,1), (0,2), (1,2)."""
+        mat = np.array([[1, 2, 3],
+                        [4, 5, 6],
+                        [7, 8, 9]], dtype=float)
+        np.testing.assert_array_equal(upper_triangle(mat), [2.0, 3.0, 6.0])
+
+    def test_length(self):
+        n = 8
+        assert len(upper_triangle(np.ones((n, n)))) == n * (n - 1) // 2
+
+
+class TestPairwiseCorrMatrix:
+
+    @staticmethod
+    def _df(seed=10, n=50, cols="ABCD"):
+        rng = np.random.default_rng(seed)
+        return pd.DataFrame(rng.standard_normal((n, len(cols))), columns=list(cols))
+
+    def test_output_shape(self):
+        result = pairwise_corr_matrix(self._df())
+        assert result.shape == (4, 4)
+
+    def test_diagonal_is_one(self):
+        result = pairwise_corr_matrix(self._df())
+        np.testing.assert_allclose(np.diag(result.values), 1.0, atol=1e-10)
+
+    def test_symmetric(self):
+        result = pairwise_corr_matrix(self._df())
+        np.testing.assert_allclose(result.values, result.values.T, atol=1e-15)
+
+    def test_nan_below_min_periods(self):
+        """min_periods=12: fewer than 12 overlapping finite values → NaN."""
+        df = pd.DataFrame({
+            "A": np.concatenate([np.arange(5, dtype=float), np.full(45, np.nan)]),
+            "B": np.arange(50, dtype=float),
+        })
+        result = pairwise_corr_matrix(df)
+        assert np.isnan(result.loc["A", "B"])
+
+
+class TestPatternCorrelation:
+
+    @staticmethod
+    def _corr(seed, n=50, cols="ABCD"):
+        rng = np.random.default_rng(seed)
+        df = pd.DataFrame(rng.standard_normal((n, len(cols))), columns=list(cols))
+        return pairwise_corr_matrix(df)
+
+    def test_identical_matrices_give_r1(self):
+        mat = self._corr(20)
+        assert abs(pattern_correlation(mat, mat) - 1.0) < 1e-10
+
+    def test_returns_float_in_range(self):
+        r = pattern_correlation(self._corr(21), self._corr(22))
+        assert isinstance(r, float)
+        assert -1.0 - 1e-10 <= r <= 1.0 + 1e-10
+
+    def test_column_intersection_matches_direct_computation(self):
+        """Result with mismatched columns equals restricting to shared columns first."""
+        rng = np.random.default_rng(23)
+        df_abcd = pd.DataFrame(rng.standard_normal((50, 4)), columns=list("ABCD"))
+        df_abc  = pd.DataFrame(rng.standard_normal((50, 3)), columns=list("ABC"))
+
+        m_abcd = pairwise_corr_matrix(df_abcd)
+        m_abc  = pairwise_corr_matrix(df_abc)
+
+        # Ground truth: recompute mat1 restricted to shared columns, then correlate
+        m_abc_from_abcd = pairwise_corr_matrix(df_abcd[list("ABC")])
+        r_expected = pattern_correlation(m_abc_from_abcd, m_abc)
+
+        r_intersection = pattern_correlation(m_abcd, m_abc)
+        assert abs(r_intersection - r_expected) < 1e-10

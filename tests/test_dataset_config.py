@@ -119,17 +119,15 @@ class TestCondDimFormula:
         assert obj.target_dim == 8
 
     def test_lead_norm_range(self):
-        """lead_norm maps every lead in LEAD_WEEKS to [0, 1]."""
-        from src.config import LEAD_WEEKS
-        min_l = min(LEAD_WEEKS)
-        max_l = max(LEAD_WEEKS)
+        """normalise_lead maps every LEAD_WEEKS value to [0, 1]."""
+        from src.config import LEAD_WEEKS, normalise_lead
+
         for lead in LEAD_WEEKS:
-            norm = (lead - min_l) / (max_l - min_l + 1e-8)
+            norm = normalise_lead(lead, LEAD_WEEKS)
             assert 0.0 <= norm <= 1.0, f"lead_norm out of range for lead={lead}"
 
     def test_lead_norm_min_is_zero(self):
-        from src.config import LEAD_WEEKS
-        min_l = min(LEAD_WEEKS)
-        max_l = max(LEAD_WEEKS)
-        norm = (min_l - min_l) / (max_l - min_l + 1e-8)
-        assert abs(norm) < 1e-15
+        """The smallest lead normalises to 0."""
+        from src.config import LEAD_WEEKS, normalise_lead
+
+        assert abs(normalise_lead(min(LEAD_WEEKS), LEAD_WEEKS)) < 1e-15

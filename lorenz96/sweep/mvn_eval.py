@@ -109,7 +109,7 @@ def run():
 
             rng = np.random.default_rng(SEED + i * 1000 + j)
 
-            ckpt  = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            ckpt  = torch.load(ckpt_path, map_location="cpu", weights_only=False)  # MVN uses CPU (numpy-only inference)
             mu    = ckpt["mu"]
             sigma = ckpt["sigma"]
 

@@ -13,9 +13,9 @@ from src.model.network import MLPDenoiser
 
 def load_checkpoint(path: Path | None = None, device: str | None = None):
     """Load the EMA weights for inference."""
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     path = path or (CHECKPOINTS / "ddpm_best_large.pt")
-    ckpt = torch.load(path, map_location=device)
+    ckpt = torch.load(path, map_location=device, weights_only=False)
 
     model = MLPDenoiser(
         target_dim=int(ckpt["target_dim"]),

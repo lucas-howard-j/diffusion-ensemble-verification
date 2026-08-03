@@ -7,9 +7,11 @@ import torch
 import torch.nn as nn
 
 from src.model.network import MLPDenoiser, SinusoidalTimeEmbedding, BetaSiLU
+from src.model.dataset import SSHDiffusionDataset
 
-TARGET_DIM = 8
-COND_DIM = 131
+_ds = object.__new__(SSHDiffusionDataset)
+TARGET_DIM = _ds.target_dim
+COND_DIM = _ds.cond_dim
 TIME_EMBED_DIM = 128
 BATCH = 4
 
@@ -25,10 +27,10 @@ class TestSinusoidalTimeEmbedding:
         assert emb(t).shape == (BATCH, TIME_EMBED_DIM)
 
     def test_values_bounded(self, emb):
-        """Output is composed of sin/cos, so all values are in [-1, 1]."""
+        """Output is pure sin/cos concatenation — all values must be in [-1, 1] exactly."""
         t = torch.arange(0, 1000, 100)
         out = emb(t)
-        assert out.abs().max().item() <= 1.0 + 1e-5
+        assert out.abs().max().item() <= 1.0
 
     def test_output_finite(self, emb):
         t = torch.randint(0, 1000, (BATCH,))
@@ -91,7 +93,7 @@ class TestMLPDenoiser:
 
     def test_output_shape(self, model):
         x_t, t, cond = self._inputs()
-        assert model(*self._inputs()).shape == (BATCH, TARGET_DIM)
+        assert model(x_t, t, cond).shape == (BATCH, TARGET_DIM)
 
     def test_batch_size_1(self, model):
         x_t, t, cond = self._inputs(batch=1)

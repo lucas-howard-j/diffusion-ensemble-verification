@@ -38,7 +38,7 @@ def _update_ema(ema_model: nn.Module, model: nn.Module, decay: float = EMA_DECAY
 
 
 def train(device: str | None = None) -> None:
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Device: {device}")
 
     # Data

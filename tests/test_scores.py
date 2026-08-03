@@ -8,7 +8,6 @@ import pytest
 
 from src.evaluation.scores import crps, energy_score, variogram_score
 
-RNG = np.random.default_rng(42)
 M = 50
 D = 8
 
@@ -16,6 +15,7 @@ D = 8
 # ── CRPS ─────────────────────────────────────────────────────────────────────
 
 class TestCRPS:
+    RNG = np.random.default_rng(42)
 
     def test_deterministic_ensemble_equals_abs_error(self):
         """M identical members → CRPS = |forecast − obs|."""
@@ -30,12 +30,16 @@ class TestCRPS:
         members = np.tile(obs, (M, 1))
         np.testing.assert_allclose(crps(members, obs), 0.0, atol=1e-12)
 
-    def test_2member_obs_in_middle(self):
-        """members=[0,2], obs=1 → CRPS=0 (obs exactly centred in ensemble).
+    def test_2member_unbiased_estimator_arithmetic(self):
+        """M=2 arithmetic check for the unbiased CRPS estimator.
 
         term1 = mean(|0−1|, |2−1|) = 1
-        term2 = |0−2| / 2 = 1
+        term2 = mean(off-diagonal |diffs|) / 2 = mean(2, 2) / 2 = 1
         CRPS = 1 − 1 = 0
+
+        NOTE: CRPS=0 here is an artefact of M=2 with the unbiased estimator,
+        not a general consequence of obs being centred in the ensemble.
+        With M=50 members uniformly spread around obs the score is positive.
         """
         members = np.array([[0.0], [2.0]])
         obs = np.array([1.0])
@@ -53,19 +57,19 @@ class TestCRPS:
         np.testing.assert_allclose(crps(members, obs), [3.0], atol=1e-12)
 
     def test_returns_shape_d(self):
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         assert crps(members, obs).shape == (D,)
 
     def test_nonnegative(self):
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         assert np.all(crps(members, obs) >= -1e-12)
 
     def test_nan_where_obs_nan(self):
         """NaN in obs propagates to that station only."""
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         obs[3] = np.nan
         result = crps(members, obs)
         assert np.isnan(result[3])
@@ -74,8 +78,8 @@ class TestCRPS:
 
     def test_multidim_equals_marginal(self):
         """Joint (M,d) call == per-column (M,1) calls (catches reshape bugs)."""
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         joint = crps(members, obs)
         for k in range(D):
             per_station = crps(members[:, k:k + 1], obs[k:k + 1])
@@ -85,31 +89,32 @@ class TestCRPS:
 # ── Energy Score ──────────────────────────────────────────────────────────────
 
 class TestEnergyScore:
+    RNG = np.random.default_rng(43)
 
     def test_perfect_ensemble_is_zero(self):
         """All members = obs → ES = 0."""
-        obs = RNG.standard_normal((D,))
+        obs = self.RNG.standard_normal((D,))
         members = np.tile(obs, (M, 1))
         assert abs(energy_score(members, obs)) < 1e-10
 
     def test_nonnegative(self):
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         assert energy_score(members, obs) >= -1e-10
 
     def test_returns_float(self):
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         assert isinstance(energy_score(members, obs), float)
 
     def test_nan_when_fewer_than_2_valid_stations(self):
-        members = RNG.standard_normal((M, D))
+        members = self.RNG.standard_normal((M, D))
         obs = np.full(D, np.nan)
         obs[0] = 1.0
         assert np.isnan(energy_score(members, obs))
 
     def test_nan_when_all_obs_nan(self):
-        members = RNG.standard_normal((M, D))
+        members = self.RNG.standard_normal((M, D))
         obs = np.full(D, np.nan)
         assert np.isnan(energy_score(members, obs))
 
@@ -129,11 +134,16 @@ class TestEnergyScore:
 # ── Variogram Score ───────────────────────────────────────────────────────────
 
 class TestVariogramScore:
+    RNG = np.random.default_rng(44)
 
-    def test_constant_obs_constant_ensemble_is_zero(self):
-        """obs constant, ensemble all zeros → all obs_diff=0, all ens_diff=0 → VS=0."""
-        obs = np.ones(D) * 3.7
-        members = np.zeros((M, D))
+    def test_perfect_ensemble_is_zero(self):
+        """Members all equal obs → all obs_diff == all ens_diff → VS=0.
+
+        Uses non-constant obs so both the obs-term and ensemble-term are
+        non-trivially exercised (unlike the all-constant degenerate case).
+        """
+        obs = np.arange(D, dtype=float)
+        members = np.tile(obs, (M, 1))
         assert abs(variogram_score(members, obs)) < 1e-12
 
     def test_2station_members_match_variogram(self):
@@ -155,25 +165,25 @@ class TestVariogramScore:
         np.testing.assert_allclose(variogram_score(members, obs, p=0.5), 4.0, atol=1e-10)
 
     def test_nonnegative(self):
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         assert variogram_score(members, obs) >= -1e-12
 
     def test_returns_float(self):
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         assert isinstance(variogram_score(members, obs), float)
 
     def test_nan_when_fewer_than_2_valid_stations(self):
-        members = RNG.standard_normal((M, D))
+        members = self.RNG.standard_normal((M, D))
         obs = np.full(D, np.nan)
         obs[0] = 1.0
         assert np.isnan(variogram_score(members, obs))
 
     def test_p_parameter_changes_score(self):
         """Different p values produce different scores."""
-        members = RNG.standard_normal((M, D))
-        obs = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs = self.RNG.standard_normal((D,))
         vs_half = variogram_score(members, obs, p=0.5)
         vs_one = variogram_score(members, obs, p=1.0)
         vs_two = variogram_score(members, obs, p=2.0)
@@ -192,16 +202,16 @@ class TestVariogramScore:
 
     def test_reduce_false_returns_array_of_correct_shape(self):
         """reduce=False → shape (d*(d-1)//2,), matching np.triu_indices ordering."""
-        members = RNG.standard_normal((M, D))
-        obs     = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs     = self.RNG.standard_normal((D,))
         out     = variogram_score(members, obs, reduce=False)
         assert isinstance(out, np.ndarray)
         assert out.shape == (D * (D - 1) // 2,)
 
     def test_reduce_false_nan_where_obs_nan(self):
         """Pairs where either station obs is NaN appear as NaN in the output."""
-        members = RNG.standard_normal((M, D))
-        obs     = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs     = self.RNG.standard_normal((D,))
         obs[0]  = np.nan                             # station 0 invalid
         out     = variogram_score(members, obs, reduce=False)
         triu_i, triu_j = np.triu_indices(D, k=1)
@@ -211,8 +221,8 @@ class TestVariogramScore:
 
     def test_reduce_false_nanmean_matches_reduce_true(self):
         """nanmean of reduce=False output equals the reduce=True scalar."""
-        members = RNG.standard_normal((M, D))
-        obs     = RNG.standard_normal((D,))
+        members = self.RNG.standard_normal((M, D))
+        obs     = self.RNG.standard_normal((D,))
         per_pair = variogram_score(members, obs, reduce=False)
         scalar   = variogram_score(members, obs, reduce=True)
         np.testing.assert_allclose(np.nanmean(per_pair), scalar, rtol=1e-10)
@@ -226,6 +236,6 @@ class TestVariogramScore:
         members = np.ones((M, D))
         obs     = np.arange(D, dtype=float)
         triu_i, triu_j = np.triu_indices(D, k=1)
-        k25 = int(np.where((triu_i == 2) & (triu_j == 5))[0])
+        k25 = int(np.where((triu_i == 2) & (triu_j == 5))[0][0])
         out = variogram_score(members, obs, reduce=False)
         np.testing.assert_allclose(out[k25], 3.0, rtol=1e-10)
