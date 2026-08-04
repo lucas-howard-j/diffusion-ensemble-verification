@@ -30,7 +30,7 @@ from src.config import (
     N_SSH_MODES, N_SST_MODES, N_WIND_MODES,
     SSH_LAGS, SST_LAGS, ENSO_LAGS, NAO_LAGS,
     TRAIN_YEARS, VAL_YEARS, TEST_YEARS,
-    TIDE_GAUGES, SSH_ANOM_WEEKLY,
+    TIDE_GAUGES, SSH_ANOM_WEEKLY, PROC,
     normalise_lead,
 )
 from src.eof.compute_eofs import load_eofs
@@ -126,10 +126,16 @@ class SSHDiffusionDataset(Dataset):
             raise ValueError("SST and SSH EOF time axes do not match.")
 
         # ── Load SSH anomaly field and interpolate to gauge locations ─────────
-        print("Interpolating SSH anomaly field to gauge locations ...")
-        da_ssh = xr.open_dataarray(str(SSH_ANOM_WEEKLY))
-        gauge_ssh = _interp_to_gauges(da_ssh)   # (n_time, n_gauges)
-        da_ssh.close()
+        _gauge_cache = PROC / "gauge_ssh_interp.npy"
+        if _gauge_cache.exists():
+            gauge_ssh = np.load(str(_gauge_cache))
+        else:
+            print("Interpolating SSH anomaly field to gauge locations ...")
+            da_ssh = xr.open_dataarray(str(SSH_ANOM_WEEKLY))
+            gauge_ssh = _interp_to_gauges(da_ssh)   # (n_time, n_gauges)
+            da_ssh.close()
+            np.save(str(_gauge_cache), gauge_ssh)
+            print(f"  Cached interpolated gauge SSH to {_gauge_cache}")
 
         # ── Standardise on training period ────────────────────────────────────
         train_mask = time_axis.year.isin(list(TRAIN_YEARS))
