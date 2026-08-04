@@ -280,7 +280,7 @@ def main() -> None:
     parser.add_argument("--data",      type=Path,  default=DEFAULT_DATA)
     parser.add_argument("--sigma",     type=float, default=0.01,
                         help="Relative perturbation scale (fraction of each layer norm).")
-    parser.add_argument("--n-draws",   type=int,   default=50)
+    parser.add_argument("--n-draws",   type=int,   default=200)
     parser.add_argument("--n-eval",    type=int,   default=2000,
                         help="Number of test samples (default 2000).")
     parser.add_argument("--n-ens",     type=int,   default=500,
