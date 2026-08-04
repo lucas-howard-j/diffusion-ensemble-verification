@@ -283,7 +283,7 @@ def main() -> None:
     parser.add_argument("--n-draws",   type=int,   default=50)
     parser.add_argument("--n-eval",    type=int,   default=2000,
                         help="Number of test samples (default 2000).")
-    parser.add_argument("--n-ens",     type=int,   default=50,
+    parser.add_argument("--n-ens",     type=int,   default=500,
                         help="Ensemble size per forecast.")
     parser.add_argument("--seed",      type=int,   default=42)
     parser.add_argument("--rerun",     action="store_true")
