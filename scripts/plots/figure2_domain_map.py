@@ -1,5 +1,6 @@
 """
-Figure 2: (a) US East Coast tide gauge network with pairwise SSH correlation overlay.
+Figure 2: (a) Arc diagram — US East Coast tide gauge network, stations ordered N→S,
+              curved arcs coloured by pairwise SSH Pearson r (GLORYS training period).
           (b) Per-pair VS failure vs observed Pearson r, points coloured by inter-station
               distance (km).
 
@@ -17,9 +18,11 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
+import matplotlib.patches as mpatches
+from matplotlib.path import Path as MPath
+import xarray as xr
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import xarray as xr
 
 from src.config import TIDE_GAUGES, TRAIN_YEARS, SSH_ANOM_WEEKLY
 from src.model.dataset import _interp_to_gauges
@@ -41,17 +44,6 @@ LABELS = {
     "Charleston": "Charleston, SC",
     "Mayport":    "Mayport, FL",
     "Key":        "Key West, FL",
-}
-
-OFFSETS = {
-    "Eastport":   (-9.0,  1.5),
-    "Boston":     ( 1.5,  1.8),
-    "Battery":    ( 1.5,  0.3),
-    "Atlantic":   ( 1.5, -1.2),
-    "Sewells":    ( 1.5, -1.5),
-    "Charleston": ( 1.5,  0.0),
-    "Mayport":    ( 1.5, -0.5),
-    "Key":        ( 1.5, -0.5),
 }
 
 
@@ -108,12 +100,11 @@ def main() -> None:
     FS_LABEL = 7
     FS_TITLE = 7
 
-    proj = ccrs.PlateCarree()
     fig  = plt.figure(figsize=(7.0, 5.2))
-    gs   = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1.2, 1.0],
-                             wspace=0.08)
+    gs   = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1.1, 1.0],
+                             wspace=0.30)
 
-    ax_map = fig.add_subplot(gs[0], projection=proj)
+    ax_arc = fig.add_subplot(gs[0])
 
     # Broken y-axis: top panel (main data) + bottom panel (outlier)
     gs_r   = gridspec.GridSpecFromSubplotSpec(
@@ -122,63 +113,101 @@ def main() -> None:
     ax_top = fig.add_subplot(gs_r[0])
     ax_bot = fig.add_subplot(gs_r[1], sharex=ax_top)
 
-    # ── Panel (a): map ────────────────────────────────────────────────────────
-    ax_map.set_extent([-82, -64, 22, 48], crs=proj)
-    ax_map.add_feature(cfeature.LAND,      facecolor="0.88", zorder=1)
-    ax_map.add_feature(cfeature.OCEAN,     facecolor="#d0e8f5", zorder=0)
-    ax_map.add_feature(cfeature.COASTLINE, linewidth=0.5, zorder=2)
-    ax_map.add_feature(cfeature.BORDERS,   linewidth=0.4, linestyle=":", zorder=2)
-    ax_map.add_feature(cfeature.STATES,    linewidth=0.3, zorder=2)
+    # ── Panel (a): arc diagram ────────────────────────────────────────────────
+    # Stations ordered north → south (left → right along x-axis)
+    order = list(np.argsort(LATS)[::-1])   # indices into TIDE_GAUGES, N→S
+    xs    = np.arange(n, dtype=float)
 
     cmap_net = plt.cm.YlOrRd
     norm_net = mcolors.Normalize(vmin=0.0, vmax=1.0)
-    for i in range(n):
-        for j in range(i + 1, n):
-            r = float(corr[i, j])
-            ax_map.plot(
-                [LONS[i], LONS[j]], [LATS[i], LATS[j]],
-                color=cmap_net(norm_net(r)),
-                linewidth=0.3 + 0.7 * max(r, 0),
-                alpha=0.25 + 0.75 * max(r, 0),
-                transform=proj, zorder=3, solid_capstyle="round",
-            )
 
+    # Collect all pairs, sort by r ascending so high-r arcs render on top
+    arc_pairs = []
+    for ii in range(n):
+        for jj in range(ii + 1, n):
+            r = float(corr[order[ii], order[jj]])
+            arc_pairs.append((ii, jj, r))
+    arc_pairs.sort(key=lambda t: t[2])
+
+    for ii, jj, r in arc_pairs:
+        x1, x2 = xs[ii], xs[jj]
+        h = (x2 - x1) * 0.35
+        verts = [(x1, 0.0), (x1, h), (x2, h), (x2, 0.0)]
+        codes = [MPath.MOVETO, MPath.CURVE4, MPath.CURVE4, MPath.CURVE4]
+        path  = MPath(verts, codes)
+        color = cmap_net(norm_net(r))
+        lw    = 0.3 + 1.2 * max(r, 0.0)
+        alpha = 0.25 + 0.75 * max(r, 0.0)
+        ax_arc.add_patch(mpatches.PathPatch(
+            path, facecolor="none", edgecolor=color, lw=lw, alpha=alpha,
+        ))
+
+    # Baseline and station dots
+    ax_arc.axhline(0, color="0.7", lw=0.6, zorder=0)
+    for ii in range(n):
+        ax_arc.plot(xs[ii], 0, "o", color="k", ms=4, zorder=5)
+
+    # Station labels below baseline, rotated
+    for ii, orig_i in enumerate(order):
+        short = SHORT[orig_i]
+        label = LABELS.get(short, short)
+        ax_arc.text(xs[ii], -0.22, label, fontsize=5.5,
+                    ha="right", va="top", rotation=40,
+                    transform=ax_arc.transData, clip_on=False)
+
+    max_h = (n - 1) * 0.35
+    ax_arc.set_xlim(-0.5, n - 0.5)
+    ax_arc.set_ylim(-0.9, max_h + 0.2)
+    ax_arc.axis("off")
+    ax_arc.add_patch(mpatches.FancyBboxPatch(
+        (-0.26, -0.02), 1.26, 1.02, boxstyle="square,pad=0",
+        transform=ax_arc.transAxes, facecolor="none",
+        edgecolor="0.4", linewidth=0.8, zorder=10, clip_on=False,
+    ))
+
+    # N→S directionality arrow
+    ax_arc.annotate("", xy=(n - 0.3, 0), xytext=(-0.3, 0),
+                    arrowprops=dict(arrowstyle="-|>", color="0.4", lw=0.8),
+                    annotation_clip=False)
+    ax_arc.text(-0.35, 0.08, "N", fontsize=6.5, ha="center", va="bottom", color="0.4")
+    ax_arc.text(n - 0.25, 0.08, "S", fontsize=6.5, ha="center", va="bottom", color="0.4")
+
+    ax_arc.set_title("(a)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
+
+    # Colorbar in upper-left whitespace above the arcs
+    bbox_arc = ax_arc.get_position()
+    cb_h = 0.014
+    cb_w = bbox_arc.width * 0.42
+    cb_l = bbox_arc.x0 + bbox_arc.width * 0.02
+    cb_b = bbox_arc.y0 + bbox_arc.height * 0.74
+    cax_cb = fig.add_axes([cb_l, cb_b, cb_w, cb_h])
     sm_net = cm.ScalarMappable(cmap=cmap_net, norm=norm_net)
     sm_net.set_array([])
-    cbar = fig.colorbar(sm_net, ax=ax_map, orientation="horizontal",
-                        pad=0.03, fraction=0.04, shrink=0.75, aspect=22)
+    cbar = fig.colorbar(sm_net, cax=cax_cb, orientation="horizontal")
     cbar.set_label("Pearson $r$  (GLORYS 1993–2018)", fontsize=FS_TICK)
     cbar.ax.tick_params(labelsize=FS_TICK - 1)
+    cbar.ax.xaxis.set_ticks_position("top")
+    cbar.ax.xaxis.set_label_position("top")
 
-    for lat, lon, short in zip(LATS, LONS, SHORT):
-        ax_map.plot(lon, lat, "o", color="k", ms=5, mec="k", mew=0.8,
-                    transform=proj, zorder=5)
-        dx, dy = OFFSETS.get(short, (1.2, 0.3))
-        ax_map.annotate(
-            LABELS.get(short, short),
-            xy=(lon, lat), xytext=(lon + dx, lat + dy),
-            fontsize=6, transform=proj, zorder=6,
-            arrowprops=dict(arrowstyle="-", color="0.4", lw=0.5),
-            va="center",
-        )
-
-    gl = ax_map.gridlines(draw_labels=True, linewidth=0.3, color="0.7",
-                          linestyle="--", xlocs=range(-80, -60, 5),
-                          ylocs=range(25, 50, 5), x_inline=False, y_inline=False)
-    gl.top_labels   = False
-    gl.right_labels = False
-    gl.xlabel_style = {"size": FS_TICK - 1}
-    gl.ylabel_style = {"size": FS_TICK - 1}
-
-    ax_map.set_title("(a)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
+    # Inset map: station locations, upper-right
+    iw = bbox_arc.width * 0.30
+    ih = bbox_arc.height * 0.44
+    il = bbox_arc.x1 - iw - bbox_arc.width * 0.01
+    ib = bbox_arc.y1 - ih + bbox_arc.height * 0.04
+    ax_inset = fig.add_axes([il, ib, iw, ih], projection=ccrs.PlateCarree())
+    ax_inset.set_extent([-82, -64, 22, 48], crs=ccrs.PlateCarree())
+    ax_inset.add_feature(cfeature.LAND,      facecolor="0.88", zorder=1)
+    ax_inset.add_feature(cfeature.OCEAN,     facecolor="#d0e8f5", zorder=0)
+    ax_inset.add_feature(cfeature.COASTLINE, linewidth=0.4, zorder=2)
+    ax_inset.add_feature(cfeature.STATES,    linewidth=0.25, zorder=2)
+    for lat, lon in zip(LATS, LONS):
+        ax_inset.plot(lon, lat, "o", color="k", ms=3,
+                      transform=ccrs.PlateCarree(), zorder=5)
+    for spine in ax_inset.spines.values():
+        spine.set_linewidth(0.5)
 
     # ── Panel (b): per-pair VS failure vs r, broken y-axis ───────────────────
-    cmap_dist = plt.cm.viridis
-    dist_max  = pair_dist.max()
-    norm_dist = mcolors.Normalize(vmin=0, vmax=dist_max)
-
-    sckw = dict(c=pair_dist, cmap=cmap_dist, norm=norm_dist,
-                s=22, zorder=3, linewidths=0.3, edgecolors="0.3")
+    sckw = dict(color="#2166ac", s=22, zorder=3, linewidths=0.3, edgecolors="0.3")
 
     # Find outlier bounds
     atl_idx  = list(pair_labels).index("Atlantic–Battery")
@@ -187,7 +216,7 @@ def main() -> None:
     bot_ylim = (atl_val - bot_pad, atl_val + bot_pad)
 
     ax_top.scatter(pair_r, vs_fail, **sckw)
-    sc = ax_bot.scatter(pair_r, vs_fail, **sckw)
+    ax_bot.scatter(pair_r, vs_fail, **sckw)
 
     ax_top.set_ylim(-0.30, 0.06)
     ax_bot.set_ylim(*bot_ylim)
@@ -217,14 +246,8 @@ def main() -> None:
 
     # Labels
     ax_bot.set_xlabel("Observed Pearson $r$", fontsize=FS_LABEL)
-    ax_top.set_ylabel(r"VS failure  ($1 - \mathrm{VS_{DDPM}}/\mathrm{VS_{clim}}$)",
-                      fontsize=FS_LABEL)
+    ax_top.set_ylabel("VS skill deficit", fontsize=FS_LABEL)
     ax_top.set_title("(b)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
-
-    cbar2 = fig.colorbar(sc, ax=[ax_top, ax_bot], orientation="vertical",
-                         pad=0.03, fraction=0.05, aspect=28)
-    cbar2.set_label("Distance (km)", fontsize=FS_TICK)
-    cbar2.ax.tick_params(labelsize=FS_TICK - 1)
 
     # ── Save ──────────────────────────────────────────────────────────────────
     fig.savefig(OUT_DIR / "figure2.png", dpi=150, bbox_inches="tight")
