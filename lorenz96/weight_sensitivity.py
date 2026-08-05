@@ -112,6 +112,12 @@ def _perturb_state_dict(
 # Model loading and evaluation
 # ---------------------------------------------------------------------------
 
+def _read_lead(ckpt_path: Path) -> int:
+    """Read lead_steps from a checkpoint without loading model weights."""
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    return int(ckpt["lead_steps"])
+
+
 def _load_model(ckpt_path: Path, device: str) -> tuple:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     cfg  = json.loads(ckpt["config"])
@@ -158,6 +164,7 @@ def _plot_convergence(
     es_base: float,
     vs_base: float,
     sigma: float,
+    lead: int,
     figures_dir: Path,
 ) -> None:
     n  = len(crps_draws)
@@ -192,26 +199,29 @@ def _plot_convergence(
         ax.legend(fontsize=6)
         ax.grid(True, alpha=0.2, lw=0.5)
 
-    fig.suptitle(f"L96 DDPM weight sensitivity  |  σ_rel={sigma}  |  N={n} draws", fontsize=8)
+    fig.suptitle(
+        f"L96 DDPM weight sensitivity  |  lead={lead}  |  σ_rel={sigma}  |  N={n} draws",
+        fontsize=8,
+    )
     fig.tight_layout()
     tag  = f"{sigma:.4f}".replace(".", "p")
-    path = figures_dir / f"convergence_sigma{tag}.png"
+    path = figures_dir / f"lead{lead}_convergence_sigma{tag}.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {path}")
 
 
-def _plot_summary(results_dir: Path, figures_dir: Path) -> None:
-    """Aggregate all per-sigma caches and plot mean Δskill vs sigma."""
-    files = sorted(results_dir.glob("sigma*_n[0-9]*.npz"))
+def _plot_summary(results_dir: Path, figures_dir: Path, lead: int) -> None:
+    """Aggregate all per-sigma caches for a given lead and plot mean Δskill vs sigma."""
+    files = sorted(results_dir.glob(f"lead{lead}_sigma*_n[0-9]*.npz"))
     if not files:
-        print("No cached results found in", results_dir)
+        print(f"No cached results found in {results_dir} for lead={lead}")
         return
 
     rows = []
     for f in files:
-        stem   = f.stem                                  # e.g. sigma0p0100_n50
-        s_part = stem.split("_")[0].replace("sigma", "").replace("p", ".")
+        stem   = f.stem                                  # e.g. lead20_sigma0p0100_n50
+        s_part = stem.split("_")[1].replace("sigma", "").replace("p", ".")
         try:
             sigma = float(s_part)
         except ValueError:
@@ -254,7 +264,7 @@ def _plot_summary(results_dir: Path, figures_dir: Path) -> None:
     ax.grid(True, alpha=0.2, lw=0.5, which="both")
     fig.tight_layout()
 
-    path = figures_dir / "sensitivity_summary.png"
+    path = figures_dir / f"lead{lead}_sensitivity_summary.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {path}")
@@ -311,13 +321,15 @@ def main() -> None:
     results_dir.mkdir(parents=True, exist_ok=True)
     figures_dir.mkdir(parents=True, exist_ok=True)
 
+    lead_steps = _read_lead(args.ckpt)
+
     if args.plot_only:
-        _plot_summary(results_dir, figures_dir)
+        _plot_summary(results_dir, figures_dir, lead_steps)
         return
 
     smoke_tag  = "_smoke" if args.smoke else ""
     sigma_tag  = f"{args.sigma:.4f}".replace(".", "p")
-    cache_path = results_dir / f"sigma{sigma_tag}_n{args.n_draws}{smoke_tag}.npz"
+    cache_path = results_dir / f"lead{lead_steps}_sigma{sigma_tag}_n{args.n_draws}{smoke_tag}.npz"
 
     if cache_path.exists() and not args.rerun:
         print(f"Loading cached results from {cache_path}")
@@ -331,17 +343,16 @@ def main() -> None:
     else:
         model, ckpt = _load_model(args.ckpt, args.device)
         mu, sigma   = ckpt["mu"], ckpt["sigma"]
-        lead        = int(ckpt["lead_steps"])
 
         states, _ = load_trajectory(str(args.data))
         test_raw  = states[TEST_START:]
         rng_data  = np.random.default_rng(args.seed)
-        n_avail   = len(test_raw) - lead
+        n_avail   = len(test_raw) - lead_steps
         idx       = rng_data.choice(n_avail, size=min(args.n_eval, n_avail), replace=False)
         idx.sort()
 
         cond_norm   = (test_raw[idx]        - mu) / sigma
-        target_norm = (test_raw[idx + lead] - mu) / sigma
+        target_norm = (test_raw[idx + lead_steps] - mu) / sigma
 
         # Climatological reference — fixed for all draws
         train_raw = states[:TRAIN_END]
@@ -399,7 +410,7 @@ def main() -> None:
     _plot_convergence(
         crps_draws, es_draws, vs_draws,
         crps_base, es_base, vs_base,
-        args.sigma, figures_dir,
+        args.sigma, lead_steps, figures_dir,
     )
 
     # Summary stats
