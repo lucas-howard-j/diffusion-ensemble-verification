@@ -202,3 +202,44 @@ class DDPM(nn.Module):
             x = ab_prev.sqrt() * x0_pred + (1 - ab_prev).sqrt() * eps_pred
 
         return x.view(B, n_samples, state_dim)   # (B, M, N)
+
+
+# ---------------------------------------------------------------------------
+# Deterministic emulator (no diffusion, MSE-trained direct map)
+# ---------------------------------------------------------------------------
+
+class DetResBlock(nn.Module):
+    """Residual block without timestep embedding."""
+    def __init__(self, hidden_ch: int, kernel_size: int):
+        super().__init__()
+        self.conv1 = CircularConv1d(hidden_ch, hidden_ch, kernel_size)
+        self.conv2 = CircularConv1d(hidden_ch, hidden_ch, kernel_size)
+        self.act   = nn.SiLU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.conv1(self.act(x))
+        h = self.conv2(self.act(h))
+        return x + h
+
+
+class ConvDeterministicNet(nn.Module):
+    """Direct cond → target map; no noise or timestep embedding."""
+    def __init__(
+        self,
+        hidden_ch:   int = HIDDEN_CH,
+        n_res:       int = N_RES,
+        kernel_size: int = KERNEL,
+    ):
+        super().__init__()
+        self.in_proj  = CircularConv1d(1, hidden_ch, kernel_size)
+        self.blocks   = nn.ModuleList(
+            [DetResBlock(hidden_ch, kernel_size) for _ in range(n_res)]
+        )
+        self.out_proj = nn.Sequential(nn.SiLU(), nn.Conv1d(hidden_ch, 1, 1))
+
+    def forward(self, cond: torch.Tensor) -> torch.Tensor:
+        x = cond.unsqueeze(1)               # (B, 1, N)
+        h = self.in_proj(x)                  # (B, hidden_ch, N)
+        for block in self.blocks:
+            h = block(h)
+        return self.out_proj(h).squeeze(1)   # (B, N)
