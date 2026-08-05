@@ -22,7 +22,7 @@ import torch
 
 from lorenz96.config import F as L96_F, TRAIN_END, TEST_START
 from lorenz96.dataset import load_trajectory
-from lorenz96.eval import crps_ensemble, variogram_score
+from lorenz96.eval import crps_ensemble, variogram_score, bootstrap_skill_ci
 
 
 # ---------------------------------------------------------------------------
@@ -140,11 +140,15 @@ def run_dynamical_ensemble(
     print(f"CRPS skill={crps_skill:+.4f}  VS skill={vs_skill:+.4f}  "
           f"spread={spread:.4f}  σ_ic={sigma_ic:.4f}")
 
+    print("Bootstrapping CIs ...", flush=True)
+    ci = bootstrap_skill_ci(target_norm, ens_norm, clim_ens_norm)
+
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         out_path,
         crps_skill=crps_skill, vs_skill=vs_skill,
         crps_node=crps_node, spread=spread, sigma_ic=sigma_ic,
+        **{k: np.float64(v) for k, v in ci.items()},
     )
     print(f"Saved → {out_path}")
     return {"crps_skill": crps_skill, "vs_skill": vs_skill,
