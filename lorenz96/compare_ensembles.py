@@ -19,7 +19,7 @@ Usage:
         --det-ckpt  lorenz96/checkpoints/det_emulator.pt \\
         [--data PATH] [--n-eval 2000] [--n-ens 500] \\
         [--sigma-ic 0.01 | --match-spread] \\
-        [--out-dir lorenz96/compare_ensembles]
+        [--out-dir lorenz96/ensemble_results]
 """
 
 import argparse
@@ -255,7 +255,7 @@ def main():
                         help="Force spread-matching calibration (default when --sigma-ic omitted)")
     parser.add_argument("--sample-steps", type=int, default=200)
     parser.add_argument("--device",     default=None)
-    parser.add_argument("--out-dir",    default="lorenz96/compare_ensembles")
+    parser.add_argument("--out-dir",    default="lorenz96/ensemble_results")
     parser.add_argument("--dyn-results",  default=None,
                         help="Load pre-computed dynamical results from this npz")
     parser.add_argument("--det-results",  default=None,

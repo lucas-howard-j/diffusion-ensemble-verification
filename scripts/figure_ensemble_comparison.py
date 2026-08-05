@@ -14,8 +14,8 @@ Style matches figure4.py.
 
 Data:
     lorenz96/sweep/sweep_errors.npz                          — DDPM bootstrap CIs
-    lorenz96/compare_ensembles/dyn_results{_sig0p01}.npz     — dynamical bootstrap CIs
-    lorenz96/compare_ensembles/det_results{_sig0p01}.npz     — det emulator bootstrap CIs
+    lorenz96/ensemble_results/dyn_results{_sig0p01}.npz     — dynamical bootstrap CIs
+    lorenz96/ensemble_results/det_results{_sig0p01}.npz     — det emulator bootstrap CIs
 
 Run:
     PYTHONPATH=. python scripts/figure_ensemble_comparison.py
@@ -63,10 +63,10 @@ ddpm_vs_lo,    ddpm_vs_hi    = _ci95(_vs_dist)
 ddpm_ratio_lo, ddpm_ratio_hi = _ci95(_ratio_dist)
 
 # Dynamical and det emulator: both σ_ic conditions
-dyn_lin  = np.load("lorenz96/compare_ensembles/dyn_results_sig0p01.npz")
-dyn_mat  = np.load("lorenz96/compare_ensembles/dyn_results.npz")
-det_lin  = np.load("lorenz96/compare_ensembles/det_results_sig0p01.npz")
-det_mat  = np.load("lorenz96/compare_ensembles/det_results.npz")
+dyn_lin  = np.load("lorenz96/ensemble_results/dyn_results_sig0p01.npz")
+dyn_mat  = np.load("lorenz96/ensemble_results/dyn_results.npz")
+det_lin  = np.load("lorenz96/ensemble_results/det_results_sig0p01.npz")
+det_mat  = np.load("lorenz96/ensemble_results/det_results.npz")
 
 # Five conditions; methods grouped by background shading in the plot
 labels = [
