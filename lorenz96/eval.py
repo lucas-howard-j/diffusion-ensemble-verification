@@ -31,27 +31,115 @@ from lorenz96.model import DDPM, ConvScoreNet
 # ---------------------------------------------------------------------------
 
 def crps_ensemble(truth: np.ndarray, ens: np.ndarray) -> np.ndarray:
-    """CRPS per sample × node.  truth: (n, D), ens: (n, M, D) → (n, D)."""
-    M    = ens.shape[1]
-    mae  = np.abs(ens - truth[:, None, :]).mean(axis=1)
-    spread = np.abs(ens[:, :, None, :] - ens[:, None, :, :]).sum(axis=(1, 2)) / (2 * M * M)
+    """CRPS per sample × node.  truth: (n, D), ens: (n, M, D) → (n, D).
+
+    Spread computed via the sorted-ensemble identity (O(M log M), O(n M D) memory)
+    rather than the naive pairwise formula (O(M²), infeasible for large M).
+    """
+    M   = ens.shape[1]
+    mae = np.abs(ens - truth[:, None, :]).mean(axis=1)   # (n, D)
+
+    ens_sorted = np.sort(ens, axis=1)                     # (n, M, D)
+    k       = np.arange(M, dtype=np.float64)              # 0-indexed
+    weights = (2 * k - M + 1) / M**2                     # (M,)
+    spread  = (ens_sorted * weights[None, :, None]).sum(axis=1)   # (n, D)
+
     return mae - spread
 
 
-def variogram_score(truth: np.ndarray, ens: np.ndarray, p: float = 0.5) -> float:
+def vs_per_ic(
+    truth: np.ndarray,
+    ens:   np.ndarray,
+    p:     float = 0.5,
+    chunk: int   = 100,
+) -> np.ndarray:
+    """Per-IC variogram score contribution.  truth: (n, D), ens: (n, M, D) → (n,)."""
+    D = truth.shape[1]
+    i_idx, j_idx = np.triu_indices(D, k=1)
+    n   = truth.shape[0]
+    out = np.zeros(n)
+    for i0 in range(0, n, chunk):
+        i1 = min(i0 + chunk, n)
+        obs_diff = np.abs(truth[i0:i1, i_idx] - truth[i0:i1, j_idx]) ** p
+        ens_diff = np.abs(ens[i0:i1, :, i_idx] - ens[i0:i1, :, j_idx]) ** p
+        out[i0:i1] = ((obs_diff - ens_diff.mean(axis=1)) ** 2).mean(axis=1)
+    return out
+
+
+def bootstrap_skill_ci(
+    target_norm:   np.ndarray,
+    ens_norm:      np.ndarray,
+    clim_ens_norm: np.ndarray,
+    n_boot: int   = 1000,
+    ci:     float = 95,
+    seed:   int   = 7,
+) -> dict:
     """
-    Vectorised variogram score (Scheuerer & Hamill 2015), mean over n samples
-    and all D*(D-1)/2 pairs.
+    Bootstrap 95% CIs for CRPS skill, VS skill, and VS/CRPS ratio by
+    resampling test ICs with replacement.
+
+    Returns dict with keys: crps_{lo,hi}, vs_{lo,hi}, ratio_{lo,hi}.
+    """
+    rng = np.random.default_rng(seed)
+    n   = len(target_norm)
+
+    crps_ic_ens  = crps_ensemble(target_norm, ens_norm).mean(1)    # (n,)
+    crps_ic_clim = crps_ensemble(target_norm, clim_ens_norm).mean(1)
+    vs_ic_ens    = vs_per_ic(target_norm, ens_norm)                 # (n,)
+    vs_ic_clim   = vs_per_ic(target_norm, clim_ens_norm)
+
+    crps_b = np.empty(n_boot)
+    vs_b   = np.empty(n_boot)
+    ratio_b = np.empty(n_boot)
+
+    for b in range(n_boot):
+        idx       = rng.integers(0, n, size=n)
+        crps_b[b] = 1 - crps_ic_ens[idx].mean() / crps_ic_clim[idx].mean()
+        vs_skill  = 1 - vs_ic_ens[idx].mean()   / vs_ic_clim[idx].mean()
+        vs_b[b]   = vs_skill
+        ratio_b[b] = vs_skill / crps_b[b] if crps_b[b] != 0 else np.nan
+
+    alpha = (100 - ci) / 2
+    return {
+        "crps_lo":  float(np.percentile(crps_b,  alpha)),
+        "crps_hi":  float(np.percentile(crps_b,  100 - alpha)),
+        "vs_lo":    float(np.percentile(vs_b,    alpha)),
+        "vs_hi":    float(np.percentile(vs_b,    100 - alpha)),
+        "ratio_lo": float(np.nanpercentile(ratio_b, alpha)),
+        "ratio_hi": float(np.nanpercentile(ratio_b, 100 - alpha)),
+    }
+
+
+def variogram_score(
+    truth: np.ndarray,
+    ens:   np.ndarray,
+    p:     float = 0.5,
+    chunk: int   = 100,
+) -> float:
+    """
+    Variogram score (Scheuerer & Hamill 2015), mean over n samples and all
+    D*(D-1)/2 pairs.
 
     truth : (n, D), ens : (n, M, D)
+
+    Peak memory is O(chunk × M × n_pairs); default chunk=100 keeps this well
+    under 1 GB for M=500, D=40.
     """
     D = truth.shape[1]
-    i_idx, j_idx = np.triu_indices(D, k=1)          # (n_pairs,)
+    i_idx, j_idx = np.triu_indices(D, k=1)   # (n_pairs,)
+    n = truth.shape[0]
 
-    obs_diff = np.abs(truth[:, i_idx] - truth[:, j_idx]) ** p   # (n, n_pairs)
-    ens_diff = np.abs(ens[:, :, i_idx] - ens[:, :, j_idx]) ** p # (n, M, n_pairs)
-    ens_mean = ens_diff.mean(axis=1)                              # (n, n_pairs)
-    return float(((obs_diff - ens_mean) ** 2).mean())
+    total = 0.0
+    for i0 in range(0, n, chunk):
+        i1 = min(i0 + chunk, n)
+        obs_diff = np.abs(truth[i0:i1, i_idx] - truth[i0:i1, j_idx]) ** p   # (c, n_pairs)
+        ens_diff = np.abs(
+            ens[i0:i1, :, i_idx] - ens[i0:i1, :, j_idx]
+        ) ** p                                                                  # (c, M, n_pairs)
+        ens_mean = ens_diff.mean(axis=1)                                        # (c, n_pairs)
+        total   += float(((obs_diff - ens_mean) ** 2).sum())
+
+    return total / (n * len(i_idx))
 
 
 # ---------------------------------------------------------------------------
