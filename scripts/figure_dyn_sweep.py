@@ -123,6 +123,10 @@ def load_results(frac_to_path: dict, lead_values: list, ci_pct: float):
 def plot():
     results = load_results(DYN_FILES, LEAD_VALUES, CI_PCT)
 
+    # σ_ic values used in the main-text ensemble comparison (Fig. 4), in % of σ_clim
+    FIG4_SIGMA = [1.0, 15.78]
+    FIG4_LABELS = [r"$\sigma_{ic}=0.01$", r"$\sigma_{ic}=0.16$"]
+
     # shared y-limits for bottom row
     bot_ymin, bot_ymax = np.inf, -np.inf
     for li in range(len(LEAD_VALUES)):
@@ -175,6 +179,14 @@ def plot():
         cur_bot, cur_top = ax.get_ylim()
         ax.set_ylim(bottom=max(cur_bot, -0.05), top=min(cur_top * 1.05, 1.05))
 
+        # vertical lines for Fig. 4 σ_ic values
+        for sv, slbl in zip(FIG4_SIGMA, FIG4_LABELS):
+            ax.axvline(sv, color="k", lw=0.7, ls=(0, (3, 2)), zorder=0, alpha=0.55)
+            if col == 0:
+                ax.text(sv * 1.08, 0.07, slbl, transform=ax.get_xaxis_transform(),
+                        fontsize=FS_TICK - 0.5, ha="left", va="bottom",
+                        color="k", alpha=0.70)
+
         ax.set_xticklabels([])
         if col == 0:
             ax.set_ylabel("Skill score", fontsize=FS_LABEL)
@@ -183,15 +195,6 @@ def plot():
         ax.tick_params(axis="both", labelsize=FS_TICK)
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:g}%"))
 
-        # annotate inversion at lead=20
-        if col == 0 and len(x):
-            inv_idx = np.where(r["vs_med"] >= r["crps_med"])[0]
-            if len(inv_idx):
-                xi = x[inv_idx[0]]
-                ax.annotate("VS ≥ CRPS", xy=(xi, r["vs_med"][inv_idx[0]]),
-                            xytext=(xi * 1.5, r["vs_med"][inv_idx[0]] - 0.06),
-                            fontsize=FS_TICK, color=VS_COLOR,
-                            arrowprops=dict(arrowstyle="-", color=VS_COLOR, lw=0.7))
 
         if col == 0:
             fig_leg_handles = [hc, hv]
@@ -225,6 +228,8 @@ def plot():
         vp["cmedians"].set_linewidth(1.2)
 
         ax.axhline(0, color="k", linewidth=0.7, linestyle="--")
+        for sv in FIG4_SIGMA:
+            ax.axvline(sv, color="k", lw=0.7, ls=(0, (3, 2)), zorder=0, alpha=0.55)
         ax.set_xlim(top_ax.get_xlim())
         if bot_ylim is not None:
             ax.set_ylim(bot_ylim)

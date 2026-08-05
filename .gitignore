@@ -32,15 +32,18 @@ results/*.npz
 
 # L96/L63 runtime data and checkpoints
 lorenz96/data/
+lorenz96/l96_trajectory.npz
 lorenz96/checkpoints/
 lorenz63/data/
 lorenz63/checkpoints/
 lorenz63/sweep_T100/
 
-# Generated figures — exclude everything except figures/main/
+# Generated figures — exclude everything except figures/main/ and figures/supplement/
 figures/**
 !figures/main/
 !figures/main/**
+!figures/supplement/
+!figures/supplement/**
 
 # Generated L96 sweep plots (sweep data .npz files are included)
 lorenz96/sweep/*.pdf

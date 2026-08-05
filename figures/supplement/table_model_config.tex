@@ -1,0 +1,55 @@
+% Supplement Table S1: Model architectures and training hyperparameters
+% Place in the supplement text after the σ_ic sweep figures.
+%
+% Requires: booktabs, multirow, siunitx (or plain tabular with \num{})
+% Compile with: \usepackage{booktabs,multirow,siunitx}
+
+\begin{table}[h]
+\centering
+\caption{%
+  Architecture and training hyperparameters for all models used in the paper.
+  The L96 dynamical ensemble requires no training; entries are left blank.
+  SSH DDPM uses full DDPM reverse sampling (all $T$ steps).
+  L96 DDPM uses DDIM accelerated sampling at inference.
+  The deterministic emulator is a purely deterministic single-pass model;
+  ensembles are formed by perturbing the initial condition.
+}
+\label{tab:model_config}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lllll}
+\toprule
+ & \textbf{SSH DDPM} & \textbf{L96 DDPM} & \textbf{L96 Det.\ Emulator} & \textbf{L96 Dynamical} \\
+\midrule
+\multicolumn{5}{l}{\textit{Architecture}} \\
+\quad Type                   & MLP score net      & Conv.\ residual net  & Conv.\ residual net   & RK4 integrator \\
+\quad Input / output dim     & 131\,/\,8          & 40\,/\,40            & 40\,/\,40             & 40\,/\,40       \\
+\quad Hidden units / channels & 512--512--256      & 32 ch, 4 res.\ blocks & 32 ch, 4 res.\ blocks & ---             \\
+\quad Kernel size             & ---                & 3                    & 3                     & ---             \\
+\quad Time embedding dim      & 128 (sinusoidal)   & 32 (sinusoidal)      & ---                   & ---             \\
+\quad Dropout                 & 0.10               & ---                  & ---                   & ---             \\
+\quad Parameters              & 535,819            & 33,505               & 24,993                & ---             \\
+\midrule
+\multicolumn{5}{l}{\textit{Diffusion schedule}} \\
+\quad Diffusion steps $T$     & 1000               & 1000                 & ---                   & ---             \\
+\quad $\beta$ schedule        & linear             & linear               & ---                   & ---             \\
+\quad $\beta_1$ / $\beta_T$   & $10^{-4}$ / $0.02$ & $10^{-4}$ / $0.02$   & ---                   & ---             \\
+\midrule
+\multicolumn{5}{l}{\textit{Training}} \\
+\quad Optimizer               & AdamW              & Adam                 & Adam                  & ---             \\
+\quad Learning rate           & $3 \times 10^{-5}$ & $3 \times 10^{-4}$   & $3 \times 10^{-4}$    & ---             \\
+\quad Weight decay            & $10^{-3}$          & ---                  & ---                   & ---             \\
+\quad Batch size              & 64                 & 1024                 & 1024                  & ---             \\
+\quad Max epochs              & 1000               & 200                  & 200                   & ---             \\
+\quad Early stopping (patience) & 150 epochs       & 20 epochs            & 20 epochs             & ---             \\
+\quad EMA decay               & 0.9999             & ---                  & ---                   & ---             \\
+\quad Gradient clip           & 1.0                & ---                  & ---                   & ---             \\
+\quad Training samples        & \multicolumn{1}{p{2.8cm}}{$\sim$40\,k (daily, 1993--2018)} & 249,000 & 249,000 & ---      \\
+\quad Best val.\ loss         & 0.159              & ---                  & 0.376                 & ---             \\
+\midrule
+\multicolumn{5}{l}{\textit{Inference}} \\
+\quad Sampling                & Full DDPM (1000 steps) & DDIM (200 steps) & Single forward pass & RK4 integration \\
+\quad Ensemble formation      & Independent draws  & Independent draws    & IC perturbations      & IC perturbations \\
+\quad Lead time               & S2S (biweekly)     & 20, 40, 60 steps     & 20 steps              & 1--60 steps \\
+\bottomrule
+\end{tabular}
+\end{table}
