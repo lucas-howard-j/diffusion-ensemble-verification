@@ -72,9 +72,9 @@ det_mat  = np.load("lorenz96/ensemble_results/det_results.npz")
 labels = [
     "DDPM",
     "Dyn.\n$\\sigma_{ic}$=0.01",
-    "Dyn.\n$\\sigma_{ic}$=0.16",
+    "Dyn.\n$\\sigma_{ic}$=0.158",
     "Det.\n$\\sigma_{ic}$=0.01",
-    "Det.\n$\\sigma_{ic}$=0.16",
+    "Det.\n$\\sigma_{ic}$=0.158",
 ]
 crps = np.array([
     ddpm_crps,
@@ -162,14 +162,13 @@ ax.errorbar(x + off, vs,   yerr=vs_err,   fmt="none", color=ERR_COLOR,
 ax.axhline(0, color="k", linewidth=0.6, linestyle=":", zorder=2)
 ax.set_xticks(x)
 ax.set_xticklabels(labels, fontsize=FS_TICK)
-ax.set_ylabel("Skill score", fontsize=FS_LABEL)
+ax.set_ylabel("Skill", fontsize=FS_LABEL)
 ax.set_title("(a)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
 ax.tick_params(axis="y", labelsize=FS_TICK)
 ax.set_xlim(*XLIM)
 ax.grid(axis="y", alpha=0.25, linewidth=0.5, zorder=1)
 ax.legend(fontsize=FS_LEG, framealpha=0.95, handlelength=1.4,
           handletextpad=0.4, borderpad=0.5, loc="center right")
-_group_labels(ax, ax.get_ylim()[1])
 
 # ── Panel (b): VS / CRPS ratio ────────────────────────────────────────────────
 ax = axes[1]
@@ -195,20 +194,12 @@ ax.text(XLIM[1] - 0.04, 1.0 + 0.012, "VS/CRPS = 1",
 
 ax.set_xticks(x)
 ax.set_xticklabels(labels, fontsize=FS_TICK)
-ax.set_ylabel("VS skill / CRPS skill", fontsize=FS_LABEL)
+ax.set_ylabel("VS/CRPS ratio", fontsize=FS_LABEL)
 ax.set_title("(b)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
 ax.tick_params(axis="y", labelsize=FS_TICK)
 ax.set_xlim(*XLIM)
 ax.set_ylim(*YLIM_B)
 ax.grid(axis="y", alpha=0.25, linewidth=0.5, zorder=1)
-_group_labels(ax, YLIM_B[1])
-
-# ── Shared annotation ─────────────────────────────────────────────────────────
-fig.suptitle(
-    "Lead = 1.0 TU (20 steps)  |  $n_{\\mathrm{ens}}$ = 500  |  "
-    "$\\sigma_{ic}$=0.01: linear regime  |  $\\sigma_{ic}$=0.16: spread-matched to DDPM",
-    fontsize=FS_TITLE, y=1.01,
-)
 
 fig.tight_layout(w_pad=1.2)
 
