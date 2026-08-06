@@ -261,9 +261,9 @@ def main() -> None:
     ax_top.set_title("(b)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
 
     # ── Save ──────────────────────────────────────────────────────────────────
-    fig.savefig(OUT_DIR / "figure1.png", dpi=150, bbox_inches="tight")
-    fig.savefig(OUT_DIR / "figure1.pdf", bbox_inches="tight")
-    print(f"Saved {OUT_DIR / 'figure1.png'} and figure1.pdf")
+    fig.savefig(OUT_DIR / "figure2.png", dpi=150, bbox_inches="tight")
+    fig.savefig(OUT_DIR / "figure2.pdf", bbox_inches="tight")
+    print(f"Saved {OUT_DIR / 'figure2.png'} and figure2.pdf")
 
 
 if __name__ == "__main__":
