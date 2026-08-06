@@ -107,17 +107,17 @@ PYTHONPATH=. python -m lorenz96.compare_ensembles \
 ### 5. Generate figures
 
 ```bash
-# Figure 1 — SSH domain map and gauge correlation
+# Figure 1 — SSH central result (CRPS/ES/VS skill, decomposition)
+PYTHONPATH=. python scripts/figure1.py --split test
+
+# Figure 2 — SSH domain map and gauge correlation
 PYTHONPATH=. python scripts/plots/figure2_domain_map.py
 
-# Figure 2 — SSH central result (CRPS/ES/VS skill, decomposition)
-PYTHONPATH=. python scripts/figure3.py --split test
-
 # Figure 3 — L96 training-volume sweep
-PYTHONPATH=. python scripts/figure4.py
+PYTHONPATH=. python scripts/figure3.py
 
 # Figure 4 — Ensemble comparison: DDPM vs dynamical vs det. emulator
-PYTHONPATH=. python scripts/figure_ensemble_comparison.py
+PYTHONPATH=. python scripts/figure4_ensemble_comparison.py
 ```
 
 Publication figures are written to `figures/main/`.
