@@ -31,6 +31,9 @@ conda activate copernicus
 - `data/processed/nao_weekly.csv`, `enso_nino34_weekly.csv` — precomputed climate indices
 - `data/processed/eof_wind.npz` — wind EOF basis (9.8 MB)
 
+**Auto-generated on first run (not tracked):**
+- `data/processed/gauge_ssh_interp.npy` — SSH anomaly field interpolated to gauge locations; cached by `src/model/dataset.py` on first data load, requires `ssh_anom_weekly.nc`
+
 **Available on Zenodo (link TBA at publication):**
 - `data/processed/eof_ssh.npz`, `eof_sst.npz` — SSH/SST EOF bases (316 MB / 158 MB)
 - `data/processed/ssh_anom_weekly.nc`, `sst_anom_weekly.nc`, `wind_anom_weekly.nc` — weekly anomaly fields
