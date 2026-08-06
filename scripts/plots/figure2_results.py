@@ -6,11 +6,11 @@ Panels:
   (b) ES skill vs lead: DDPM / DDPM-shuffled / GLORYS-shuffled  (line + CI)
   (c) VS skill vs lead: same three lines                         (line + CI)
 
-Results are cached to figures/figure3_cache.npz so only the first run is slow.
+Results are cached to figures/figure2_cache.npz so only the first run is slow.
 Delete the cache file to force a recompute.
 
 Run:
-    PYTHONPATH=. python scripts/plots/figure3_results.py \
+    PYTHONPATH=. python scripts/plots/figure2_results.py \
         --ckpt checkpoints/ddpm_best_gauge_init.pt --split test
 """
 from __future__ import annotations
@@ -242,7 +242,7 @@ def main() -> None:
                         help="Ignore existing cache and rerun inference")
     args = parser.parse_args()
 
-    cache_path = OUT_DIR / f"figure3_cache_{args.split}.npz"
+    cache_path = OUT_DIR / f"figure2_cache_{args.split}.npz"
 
     if cache_path.exists() and not args.nocache:
         print(f"Loading cached results from {cache_path}")
@@ -256,7 +256,7 @@ def main() -> None:
         np.savez(cache_path, **save_dict)
         print(f"Cached to {cache_path}")
 
-    plot(data, OUT_DIR / "figure3")
+    plot(data, OUT_DIR / "figure2")
 
 
 if __name__ == "__main__":

@@ -1,16 +1,17 @@
 """
-Figure 3 (inset variant) — identical to figure3.py except panel (d) uses a
-single y-axis scaled to VS with an inset zooming into the ES bars.
+Figure 3 — SSH central result (three panels).
 
-Motivation: after extending the test set through 2025, ES Δ−Δ_clim became
-marginally significant (+0.011), breaking the original twin-axis story. The
-inset design shows the true scale contrast (ES bars near zero vs VS bars full
-height) while still making the ES CIs legible.
+(a) Marginal CRPS skill vs lead — station-mean, one bar per lead
+(b) Energy score skill vs lead — 4 grouped bars: DDPM / DDPM-shuf / GLORYS-draw / GLORYS-shuf
+(c) Variogram score skill vs lead — same 4-bar structure (p=0.5, equal weights)
 
-Outputs: figures/main/figure3_inset.pdf, figures/main/figure3_inset.png
+Reference draws use per-(init, lead) seeds so results are fully reproducible and
+independent of processing order.  Scores are cached to results/figure3_scores_{split}.npz;
+use --rerun to force recomputation.
 
-Run (from cache):
-    PYTHONPATH=. python scripts/figure3_inset.py --split test
+Run:
+    PYTHONPATH=. python scripts/figure2.py --ckpt checkpoints/ddpm_best_gauge_init.pt [--split val] [--rerun]
+    PYTHONPATH=. python scripts/figure2.py --split val          # uses cached scores
 """
 from __future__ import annotations
 
@@ -33,8 +34,8 @@ from src.model.sample import load_checkpoint
 from src.evaluation.metrics import block_bootstrap_ci
 from src.evaluation.scores import crps, energy_score, variogram_score
 
-N_MEMBERS  = 25
-BLOCK_SIZE = 3
+N_MEMBERS  = 500
+BLOCK_SIZE = 3      # weeks; matches ~2–3wk score decorrelation time
 N_BOOT     = 1000
 CI_ALPHA   = 0.05
 OUT_DIR    = Path("figures/main")
@@ -42,12 +43,14 @@ CACHE_DIR  = Path("results")
 OUT_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 
+_LEAD_COLORS     = ["#08519c", "#2171b5", "#6baed6", "#bdd7e7"]
 _DDPM_COLOR      = "#2166ac"
 _DDPM_SHUF_COLOR = "#92c5de"
 _CLIM_COLOR      = "#555555"
-_BAR_COLORS = [_DDPM_COLOR, _DDPM_SHUF_COLOR, _CLIM_COLOR]
+_CLIM_SHUF_COLOR = "#aaaaaa"
+_BAR_COLORS = [_DDPM_COLOR, _DDPM_SHUF_COLOR, _CLIM_SHUF_COLOR]
 _BAR_LABELS = ["DDPM", "DDPM shuffled", "GLORYS draw shuffled"]
-_BAR_COLS   = [0, 1, 3]
+_BAR_COLS   = [0, 1, 3]   # column indices into the (N, n_leads, 4) score arrays
 
 
 def _shuffle_columns(arr: np.ndarray, rng: np.random.Generator) -> np.ndarray:
@@ -87,9 +90,14 @@ def run_inference(ckpt_path: Path | None, split: str) -> dict:
     glorys_pool = {m: glorys_phys[glorys_time.month == m] for m in range(1, 13)}
 
     crps_ddpm_rec, crps_ref_rec, es_rec, vs_rec = [], [], [], []
+
+    # Shuffles use a single global rng (averaged over many inits; order doesn't matter).
+    # Reference draws use per-(t_val, lead) seeds so results are independent of
+    # processing order and match any other script using the same scheme.
     shuf_rng = np.random.default_rng(42)
 
     def _ref_rng(t_val: int, lead: int) -> np.random.Generator:
+        """Deterministic, order-independent seed for GLORYS reference draws."""
         return np.random.default_rng(hash((t_val, lead)) % (2 ** 31))
 
     model.eval()
@@ -150,9 +158,9 @@ def run_inference(ckpt_path: Path | None, split: str) -> dict:
             vs_rec.append(row_vs)
 
     return dict(
-        crps_ddpm = np.stack(crps_ddpm_rec),
+        crps_ddpm = np.stack(crps_ddpm_rec),   # (N, n_leads, n_st)
         crps_ref  = np.stack(crps_ref_rec),
-        es        = np.stack(es_rec),
+        es        = np.stack(es_rec),           # (N, n_leads, 4)
         vs        = np.stack(vs_rec),
         leads     = np.array(leads),
         short     = np.array(short),
@@ -162,6 +170,7 @@ def run_inference(ckpt_path: Path | None, split: str) -> dict:
 # ── Bootstrap CI ─────────────────────────────────────────────────────────────
 
 def _ci(skill_ts: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
+    """Block bootstrap 95 % CI on column means.  skill_ts: (N, n_cols)"""
     return block_bootstrap_ci(skill_ts, BLOCK_SIZE, N_BOOT, CI_ALPHA, rng)
 
 
@@ -173,7 +182,9 @@ def make_figure(scores: dict) -> None:
     es_arr        = scores["es"]
     vs_arr        = scores["vs"]
     leads         = list(scores["leads"])
+    short         = list(scores["short"])
     n_leads       = len(leads)
+    n_st          = crps_ddpm_arr.shape[2]
 
     es_ok = np.all(np.isfinite(es_arr), axis=(1, 2))
     vs_ok = np.all(np.isfinite(vs_arr), axis=(1, 2))
@@ -181,11 +192,14 @@ def make_figure(scores: dict) -> None:
 
     rng_boot = np.random.default_rng(42)
 
-    # Panel (a): ratio-of-time-means CRPS skill
+    # Panel (a): station-mean CRPS skill per lead.
+    # Use ratio-of-time-means (matches rmse_vs_lead.py) — robust to outlier reference draws.
+    # mean-of-ratios is biased negative when any single ref draw is near zero.
     crps_skill = (
         1 - crps_ddpm_arr.mean(0) / crps_ref_arr.mean(0)
-    ).mean(-1)
+    ).mean(-1)   # (n_leads,): ratio-of-means per station, then station-mean
 
+    # Bootstrap: resample raw scores and recompute ratio-of-means, same as rmse_vs_lead.py
     N = crps_ddpm_arr.shape[0]
     n_blocks  = int(np.ceil(N / BLOCK_SIZE))
     max_start = max(0, N - BLOCK_SIZE)
@@ -193,16 +207,16 @@ def make_figure(scores: dict) -> None:
     for b in range(N_BOOT):
         starts = rng_boot.integers(0, max_start + 1, size=n_blocks)
         idx    = np.concatenate([np.arange(s, s + BLOCK_SIZE) for s in starts])[:N]
-        skill  = 1 - crps_ddpm_arr[idx].mean(0) / crps_ref_arr[idx].mean(0)
-        boot_crps[b] = skill.mean(-1)
+        skill  = 1 - crps_ddpm_arr[idx].mean(0) / crps_ref_arr[idx].mean(0)  # (n_leads, n_st)
+        boot_crps[b] = skill.mean(-1)   # station-mean
     crps_lo = np.percentile(boot_crps, 100 * CI_ALPHA / 2,       axis=0)
     crps_hi = np.percentile(boot_crps, 100 * (1 - CI_ALPHA / 2), axis=0)
 
-    # Panels (b) and (c)
+    # Panels (b) and (c): skill scores only
     def _skill_and_ci(arr, ok_mask):
         a        = arr[ok_mask]
         ref      = a[:, :, 2:3]
-        per_init = 1 - a / (ref + 1e-12)
+        per_init = 1 - a / (ref + 1e-12)           # (N', n_leads, 4)
         mean     = per_init.mean(0)
         lo       = np.zeros_like(mean)
         hi       = np.zeros_like(mean)
@@ -210,7 +224,8 @@ def make_figure(scores: dict) -> None:
             l, h = _ci(per_init[:, :, col], rng_boot)
             lo[:, col] = l
             hi[:, col] = h
-        delta_ddpm   = per_init[:, :, 0] - per_init[:, :, 1]
+        # Return per-init delta time series for pooled bootstrap in panel (d)
+        delta_ddpm   = per_init[:, :, 0] - per_init[:, :, 1]   # (N', n_leads)
         delta_clim   = per_init[:, :, 2] - per_init[:, :, 3]
         delta_excess = delta_ddpm - delta_clim
         return mean, lo, hi, delta_ddpm, delta_clim, delta_excess
@@ -218,9 +233,10 @@ def make_figure(scores: dict) -> None:
     es_mean, es_lo, es_hi, es_dd, es_dc, es_de = _skill_and_ci(es_arr, es_ok)
     vs_mean, vs_lo, vs_hi, vs_dd, vs_dc, vs_de = _skill_and_ci(vs_arr, vs_ok)
 
-    # Panel (d): pooled deltas
+    # Panel (d): pool each delta across leads (lead-mean per init), then block-bootstrap
     def _pooled_ci(ts: np.ndarray) -> tuple[float, float]:
-        lead_mean = ts.mean(axis=1)
+        """ts: (N, n_leads) → average across leads, block-bootstrap CI on the mean."""
+        lead_mean = ts.mean(axis=1)   # (N,)
         N_p = len(lead_mean)
         nb  = int(np.ceil(N_p / BLOCK_SIZE))
         ms  = max(0, N_p - BLOCK_SIZE)
@@ -258,7 +274,7 @@ def make_figure(scores: dict) -> None:
         sig = "*" if (lo > 0 or hi < 0) else " "
         print(f"  {name:<16}  {val:>+.4f}  [{lo:>+.4f}, {hi:>+.4f}] {sig}")
 
-    # ── Build figure ─────────────────────────────────────────────────────────
+    # Build figure: 2×2 layout
     fig = plt.figure(figsize=(7.0, 5.2))
     gs  = gridspec.GridSpec(2, 2, figure=fig, hspace=0.45, wspace=0.40)
     ax_a = fig.add_subplot(gs[0, 0])
@@ -266,12 +282,12 @@ def make_figure(scores: dict) -> None:
     ax_c = fig.add_subplot(gs[1, 0])
     ax_d = fig.add_subplot(gs[1, 1])
 
-    FS_TICK  = 6
-    FS_LABEL = 7
-    FS_TITLE = 7
-    FS_LEG   = 5.5
+    FS_TICK  = 6    # tick labels
+    FS_LABEL = 7    # axis labels
+    FS_TITLE = 7    # panel titles
+    FS_LEG   = 5.5  # legends
 
-    ld = np.array(leads)
+    ld = np.array(leads)   # actual week values for x-axis
 
     def _style_lead_ax(ax, ylabel, title, leg_loc="lower left",
                        zero_line=True, leg_outside=False):
@@ -283,22 +299,20 @@ def make_figure(scores: dict) -> None:
         ax.set_ylabel(ylabel, fontsize=FS_LABEL)
         ax.set_title(title, fontweight="bold", fontsize=FS_TITLE)
         ax.tick_params(labelsize=FS_TICK)
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            if leg_outside:
-                ax.legend(fontsize=FS_LEG, loc="upper center",
-                          bbox_to_anchor=(0.5, -0.22), ncol=3,
-                          borderaxespad=0, frameon=True)
-            else:
-                ax.legend(fontsize=FS_LEG, loc=leg_loc)
+        if leg_outside:
+            ax.legend(fontsize=FS_LEG, loc="upper center",
+                      bbox_to_anchor=(0.5, -0.22), ncol=3,
+                      borderaxespad=0, frameon=True)
+        else:
+            ax.legend(fontsize=FS_LEG, loc=leg_loc)
         ax.grid(True, alpha=0.2, lw=0.5)
 
-    # Panel (a)
+    # Panel (a): single line + shaded 95 % CI
     ax_a.plot(ld, crps_skill, "o-", color=_DDPM_COLOR, lw=1.2, ms=3)
     ax_a.fill_between(ld, crps_lo, crps_hi, color=_DDPM_COLOR, alpha=0.18)
     _style_lead_ax(ax_a, "CRPS skill", "(a) Marginal CRPS skill", leg_loc="upper right")
 
-    # Panels (b) and (c)
+    # Panels (b) and (c): one line per series with shaded CI
     _LINE_STYLES = ["-", "--", ":"]
     _MARKERS     = ["o", "s", "^"]
 
@@ -319,78 +333,64 @@ def make_figure(scores: dict) -> None:
                       zero_line=True, leg_outside=True)
     ax_c.set_ylim(top=0.1)
 
-    # ── Panel (d): single y-axis (VS scale) + inset for ES ───────────────────
+    err_kw = dict(elinewidth=0.6, capsize=2, ecolor="0.25")
+
+    # Panel (d): pooled deltas — ES on left axis, VS on right axis (scales differ ~50×)
     _D_LABELS = [r"$\Delta$DDPM", r"$\Delta$GLORYS", r"$\Delta$DDPM$-\Delta$GLORYS"]
     _D_COLORS = [_DDPM_COLOR, _CLIM_COLOR, "#b2182b"]
-    w_d  = 0.22
-    x_es = np.array([-1, 0, 1]) * w_d
-    x_vs = np.array([-1, 0, 1]) * w_d + 1.6
+    w_d   = 0.22
+    x_es  = np.array([-1, 0, 1]) * w_d          # ES bars centred at x=0
+    x_vs  = np.array([-1, 0, 1]) * w_d + 1.6    # VS bars centred at x=1.6
 
-    err_kw_vs = dict(elinewidth=0.6, capsize=2, ecolor="0.25")
-    err_kw_es = dict(elinewidth=0.6, capsize=2, capthick=0.1, ecolor="0.25")
+    ax_d2 = ax_d.twinx()   # right axis for VS
 
-    vs_ymax = max(d_hi_p[3], d_hi_p[4], d_hi_p[5]) * 1.25
-    es_ymax = max(d_hi_p[0], d_hi_p[1], d_hi_p[2]) * 1.25
-
-    # Draw all bars on main axis
     for di, (label, color) in enumerate(zip(_D_LABELS, _D_COLORS)):
-        # ES bar — tiny on VS scale, detailed in inset
+        # ES bar — left axis
         val    = d_vals[di]
         err_lo = np.maximum(0, val - d_lo_p[di])
         err_hi = np.maximum(0, d_hi_p[di] - val)
         ax_d.bar(x_es[di], val, w_d, color=color, hatch="///", alpha=0.8,
-                 label=label, yerr=[[err_lo], [err_hi]], error_kw=err_kw_es)
-
-        # VS bar — full scale
-        vi     = di + 3
-        val_v  = d_vals[vi]
-        err_lo = np.maximum(0, val_v - d_lo_p[vi])
-        err_hi = np.maximum(0, d_hi_p[vi] - val_v)
-        ax_d.bar(x_vs[di], val_v, w_d, color=color, hatch="///", alpha=0.8,
-                 yerr=[[err_lo], [err_hi]], error_kw=err_kw_vs)
-        if d_lo_p[vi] > 0 or d_hi_p[vi] < 0:
-            ax_d.text(x_vs[di], d_hi_p[vi] + vs_ymax * 0.03, "*",
+                 label=label, yerr=[[err_lo], [err_hi]], error_kw=err_kw)
+        if d_lo_p[di] > 0 or d_hi_p[di] < 0:
+            ax_d.text(x_es[di], d_hi_p[di] + 0.002, "*",
                       ha="center", va="bottom", fontsize=8, color="k")
 
-    ax_d.set_ylim(0, vs_ymax)
+        # VS bar — right axis
+        vi     = di + 3
+        val    = d_vals[vi]
+        err_lo = np.maximum(0, val - d_lo_p[vi])
+        err_hi = np.maximum(0, d_hi_p[vi] - val)
+        ax_d2.bar(x_vs[di], val, w_d, color=color, hatch="///", alpha=0.8,
+                  yerr=[[err_lo], [err_hi]], error_kw=err_kw)
+        if d_lo_p[vi] > 0 or d_hi_p[vi] < 0:
+            ax_d2.text(x_vs[di], d_hi_p[vi] + 0.01, "*",
+                       ha="center", va="bottom", fontsize=8, color="k")
+
+    # Align zeros: keep the data-driven upper limits, push lower limits down so
+    # that y=0 sits at the same fractional height on both axes.
+    es_hi = max(d_hi_p[0], d_hi_p[1], d_hi_p[2]) * 1.25
+    vs_hi = max(d_hi_p[3], d_hi_p[4], d_hi_p[5]) * 1.25
+    # natural negative extents (may be 0 if all bars positive)
+    es_lo_nat = min(d_lo_p[0], d_lo_p[1], d_lo_p[2], 0) * 1.25
+    vs_lo_nat = min(d_lo_p[3], d_lo_p[4], d_lo_p[5], 0) * 1.25
+    zero_frac = max(-es_lo_nat / (es_hi - es_lo_nat),
+                    -vs_lo_nat / (vs_hi - vs_lo_nat))
+    # given zero_frac and hi, lo = -zero_frac / (1 - zero_frac) * hi
+    ax_d.set_ylim(-zero_frac / (1 - zero_frac) * es_hi, es_hi)
+    ax_d2.set_ylim(-zero_frac / (1 - zero_frac) * vs_hi, vs_hi)
+
     ax_d.axhline(0, color="k", lw=0.8, ls="--")
     ax_d.set_xticks([0, 1.6])
     ax_d.set_xticklabels(["ES", "VS"], fontsize=FS_TICK + 1, fontweight="bold")
     ax_d.set_xlim(-0.55, 2.15)
-    ax_d.set_ylabel(r"$\Delta$ skill  (pooled)", fontsize=FS_LABEL)
-    ax_d.tick_params(axis="y", labelsize=FS_TICK)
+    ax_d.set_ylabel(r"ES  $\Delta$ skill  (pooled)", fontsize=FS_LABEL, color=_DDPM_COLOR)
+    ax_d.tick_params(axis="y", labelsize=FS_TICK, labelcolor=_DDPM_COLOR)
+    ax_d2.set_ylabel(r"VS  $\Delta$ skill  (pooled)", fontsize=FS_LABEL, color="#555555")
+    ax_d2.tick_params(axis="y", labelsize=FS_TICK, labelcolor="#555555")
     ax_d.set_title("(d) Joint structure\ncontribution", fontweight="bold", fontsize=FS_TITLE)
     ax_d.grid(True, axis="y", alpha=0.25, lw=0.6)
 
-    # Inset: zoomed view of ES bars — centred over the ES bar group so
-    # indicate_inset_zoom connectors stay roughly parallel (no V-cross).
-    ax_ins = ax_d.inset_axes([0.04, 0.50, 0.37, 0.46])
-
-    err_kw_ins = dict(elinewidth=0.6, capsize=2, ecolor="0.25")
-    for di, (label, color) in enumerate(zip(_D_LABELS, _D_COLORS)):
-        val    = d_vals[di]
-        err_lo = np.maximum(0, val - d_lo_p[di])
-        err_hi = np.maximum(0, d_hi_p[di] - val)
-        ax_ins.bar(x_es[di], val, w_d, color=color, hatch="///", alpha=0.8,
-                   yerr=[[err_lo], [err_hi]], error_kw=err_kw_ins)
-        if d_lo_p[di] > 0 or d_hi_p[di] < 0:
-            ax_ins.text(x_es[di], d_hi_p[di] + es_ymax * 0.04, "*",
-                        ha="center", va="bottom", fontsize=6, color="k")
-
-    ax_ins.set_xlim(-0.45, 0.45)
-    ax_ins.set_ylim(0, es_ymax)
-    ax_ins.set_xticks([])
-    ax_ins.yaxis.tick_right()
-    ax_ins.tick_params(labelsize=6)
-    ax_ins.axhline(0, color="k", lw=0.5, ls="--")
-    ax_ins.grid(True, axis="y", alpha=0.2, lw=0.4)
-    # Label inside the box to avoid y-axis label clipping
-    ax_ins.text(0.97, 0.97, "ES Δ skill", transform=ax_ins.transAxes,
-                fontsize=6, ha="right", va="top", color="k")
-
-    ax_d.indicate_inset_zoom(ax_ins, edgecolor="0.4")
-
-    # Legend
+    # Legend: bar labels + star explanation (no double-asterisk)
     legend_handles = [
         matplotlib.patches.Patch(facecolor=c, hatch="///", alpha=0.8, label=l)
         for c, l in zip(_D_COLORS, _D_LABELS)
@@ -399,18 +399,21 @@ def make_figure(scores: dict) -> None:
     ax_d.legend(handles=legend_handles, fontsize=FS_LEG, loc="upper center",
                 bbox_to_anchor=(0.5, -0.22), ncol=2, borderaxespad=0, frameon=True)
 
-    fig.savefig(OUT_DIR / "figure3_inset.pdf", bbox_inches="tight", dpi=300)
-    fig.savefig(OUT_DIR / "figure3_inset.png", dpi=300, bbox_inches="tight")
-    print("\nSaved figures/main/figure3_inset.pdf and figures/main/figure3_inset.png")
+    fig.savefig(OUT_DIR / "figure2.pdf", bbox_inches="tight", dpi=300)
+    fig.savefig(OUT_DIR / "figure2.png", dpi=300, bbox_inches="tight")
+    print("\nSaved figures/figure2.pdf and figures/figure2.png")
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt",  type=Path, default=None)
-    parser.add_argument("--split", type=str,  default="val")
-    parser.add_argument("--rerun", action="store_true")
+    parser.add_argument("--ckpt",  type=Path, default=None,
+                        help="Checkpoint path (only needed when running inference)")
+    parser.add_argument("--split", type=str,  default="val",
+                        help="Dataset split: val or test")
+    parser.add_argument("--rerun", action="store_true",
+                        help="Force rerun inference even if cache exists")
     args = parser.parse_args()
 
     cache_path = CACHE_DIR / f"figure3_scores_{args.split}.npz"
