@@ -100,9 +100,9 @@ def main() -> None:
     FS_LABEL = 7
     FS_TITLE = 7
 
-    fig  = plt.figure(figsize=(7.0, 5.2))
-    gs   = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1.1, 1.0],
-                             wspace=0.30)
+    fig  = plt.figure(figsize=(7.0, 5.5))
+    gs   = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[0.85, 1.0],
+                             wspace=0.55)
 
     ax_arc = fig.add_subplot(gs[0])
 
@@ -142,16 +142,20 @@ def main() -> None:
             path, facecolor="none", edgecolor=color, lw=lw, alpha=alpha,
         ))
 
-    # Baseline and station dots
+    # Baseline and station dots — hollow circles with number inside
     ax_arc.axhline(0, color="0.7", lw=0.6, zorder=0)
     for ii in range(n):
-        ax_arc.plot(xs[ii], 0, "o", color="k", ms=4, zorder=5)
+        ax_arc.plot(xs[ii], 0, "o", color="k", ms=9, zorder=5,
+                    markerfacecolor="white", markeredgewidth=0.8)
+        ax_arc.text(xs[ii], 0, str(ii + 1), fontsize=5,
+                    ha="center", va="center", color="k", zorder=6,
+                    fontweight="bold")
 
-    # Station labels below baseline, rotated
+    # Station labels below baseline, rotated — pushed down to clear the dot
     for ii, orig_i in enumerate(order):
         short = SHORT[orig_i]
         label = LABELS.get(short, short)
-        ax_arc.text(xs[ii], -0.22, label, fontsize=5.5,
+        ax_arc.text(xs[ii], -0.30, label, fontsize=5.0,
                     ha="right", va="top", rotation=40,
                     transform=ax_arc.transData, clip_on=False)
 
@@ -160,7 +164,7 @@ def main() -> None:
     ax_arc.set_ylim(-0.9, max_h + 0.2)
     ax_arc.axis("off")
     ax_arc.add_patch(mpatches.FancyBboxPatch(
-        (-0.26, -0.02), 1.26, 1.02, boxstyle="square,pad=0",
+        (-0.26, -0.02), 1.42, 1.02, boxstyle="square,pad=0",
         transform=ax_arc.transAxes, facecolor="none",
         edgecolor="0.4", linewidth=0.8, zorder=10, clip_on=False,
     ))
@@ -178,8 +182,8 @@ def main() -> None:
     bbox_arc = ax_arc.get_position()
     cb_h = 0.014
     cb_w = bbox_arc.width * 0.42
-    cb_l = bbox_arc.x0 + bbox_arc.width * 0.02
-    cb_b = bbox_arc.y0 + bbox_arc.height * 0.74
+    cb_l = bbox_arc.x0 - bbox_arc.width * 0.04
+    cb_b = bbox_arc.y0 + bbox_arc.height * 0.82
     cax_cb = fig.add_axes([cb_l, cb_b, cb_w, cb_h])
     sm_net = cm.ScalarMappable(cmap=cmap_net, norm=norm_net)
     sm_net.set_array([])
@@ -190,19 +194,26 @@ def main() -> None:
     cbar.ax.xaxis.set_label_position("top")
 
     # Inset map: station locations, upper-right
-    iw = bbox_arc.width * 0.30
-    ih = bbox_arc.height * 0.44
-    il = bbox_arc.x1 - iw - bbox_arc.width * 0.01
-    ib = bbox_arc.y1 - ih + bbox_arc.height * 0.04
+    iw = bbox_arc.width * 0.42
+    ih = bbox_arc.height * 0.58
+    il = bbox_arc.x1 - iw + bbox_arc.width * 0.06
+    ib = bbox_arc.y1 - ih + bbox_arc.height * 0.14
     ax_inset = fig.add_axes([il, ib, iw, ih], projection=ccrs.PlateCarree())
     ax_inset.set_extent([-82, -64, 22, 48], crs=ccrs.PlateCarree())
     ax_inset.add_feature(cfeature.LAND,      facecolor="0.88", zorder=1)
     ax_inset.add_feature(cfeature.OCEAN,     facecolor="#d0e8f5", zorder=0)
     ax_inset.add_feature(cfeature.COASTLINE, linewidth=0.4, zorder=2)
     ax_inset.add_feature(cfeature.STATES,    linewidth=0.25, zorder=2)
-    for lat, lon in zip(LATS, LONS):
-        ax_inset.plot(lon, lat, "o", color="k", ms=3,
+    # Number stations in N→S order (matching arc plot) — hollow dots, number inside
+    map_order = list(np.argsort(LATS)[::-1])
+    for rank, orig_i in enumerate(map_order):
+        lat, lon = LATS[orig_i], LONS[orig_i]
+        ax_inset.plot(lon, lat, "o", color="k", ms=7,
+                      markerfacecolor="white", markeredgewidth=0.6,
                       transform=ccrs.PlateCarree(), zorder=5)
+        ax_inset.text(lon, lat, str(rank + 1), fontsize=4,
+                      ha="center", va="center", color="k", fontweight="bold",
+                      transform=ccrs.PlateCarree(), zorder=6)
     for spine in ax_inset.spines.values():
         spine.set_linewidth(0.5)
 
