@@ -1,11 +1,11 @@
-# SSH Diffusion: Probabilistic S2S Coastal Sea Level Forecasting
+# Do AI Forecast Ensembles Sample the Correct Conditional Distribution?
 
 Code for the paper (submitted to GRL):
 
-> **Decoupled Marginal and Joint Skill in a Diffusion Ensemble for Subseasonal Coastal Sea Level**  
+> **Do AI Forecast Ensembles Sample the Correct Conditional Distribution?**  
 > Lucas Howard, Elizabeth Barnes — Barnes Lab, Colorado State University
 
-A denoising diffusion probabilistic model (DDPM) trained to predict SSH anomalies at 8 NOAA tide gauges along the US East Coast at 2–12 week lead times. The paper addresses the open question of what probabilistic AI ensembles are sampling from: standard marginal metrics (CRPS) can be satisfied by a model whose joint distribution is structurally wrong. We show that positive CRPS skill coexists with near-zero variogram score (VS) skill in a trained DDPM for S2S coastal sea level. Controlled Lorenz-96 experiments confirm this decoupling does not close with training data volume and is attributable to the score-matching objective (a marginal loss with no joint penalty), not to chaos or limited ensemble diversity alone.
+The fundamental problem ensemble forecasting attempts to solve is to generate samples from a conditional distribution that represents the true uncertainty in outcomes. For AI forecast models, the question of whether the ensemble samples from the correct joint distribution remains largely untested. We train a diffusion model to generate probabilistic subseasonal forecasts of coastal sea level at eight tide gauge stations along the US East Coast, with sea level derived from reanalysis, and find that marginal and joint forecast quality can decouple: the model achieves positive skill at every station and lead time when evaluated marginally, while its joint spatial structure is worse than drawing randomly from the climatological record. A shuffle-based permutation decomposition reveals this failure is invisible to the commonly used energy score metric but clearly detected by the variogram score, which is specifically sensitive to dependence structure. Lorenz-96 experiments across training volumes equivalent to 0.7–170 years of ERA5 demonstrate that the decoupling does not close with additional data and is reproduced by a linear baseline, indicating structural inadequacy of the learned distribution rather than insufficient training data. A further comparison in the L96 system between a dynamical model and a deterministic emulator reproduces the gap in the emulator but not the dynamical model, suggesting that it is a failure mode specific to learned emulators rather than of a specific architecture or method.
 
 ---
 
