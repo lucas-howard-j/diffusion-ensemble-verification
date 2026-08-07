@@ -1,6 +1,6 @@
 # Do AI Forecast Ensembles Sample the Correct Conditional Distribution?
 
-Code for the paper (submitted to GRL):
+Code for the paper:
 
 > **Do AI Forecast Ensembles Sample the Correct Conditional Distribution?**  
 > Lucas Howard, Elizabeth Barnes — Faculty of Computing and Data Sciences, Boston University
