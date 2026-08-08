@@ -140,9 +140,10 @@ Publication figures are written to `figures/main/`.
 │   └── data/                   Data loaders (GLORYS, ERA5, tide gauges)
 │
 ├── scripts/                    Analysis and figure scripts
-│   ├── figure3.py              Fig 2 — SSH ES/VS/CRPS skill (main result)
-│   ├── figure4.py              Fig 3 — L96 training-volume sweep
-│   ├── figure_ensemble_comparison.py  Fig 4 — DDPM vs dynamical vs det. emulator
+│   ├── figure1.py              Fig 1 — SSH ES/VS/CRPS skill (main result)
+│   ├── figure1_inset.py        Fig 1 variant — with inset panel for joint contribution
+│   ├── figure3.py              Fig 3 — L96 training-volume sweep
+│   ├── figure4_ensemble_comparison.py  Fig 4 — DDPM vs dynamical vs det. emulator
 │   ├── ensemble_diagnostics.py ES, VS, spread-error diagnostics
 │   ├── rmse_vs_lead.py         CRPS and RMSE skill vs lead
 │   ├── gauge_correlation.py    Marginal Pearson r vs NOAA gauges
@@ -194,14 +195,15 @@ Publication figures are written to `figures/main/`.
 │   └── processed/              Precomputed indices and EOFs (large files on Zenodo)
 │
 ├── results/                    Cached evaluation scores for figure reproducibility
-│   ├── figure3_scores_test.npz
-│   └── figure3_scores_val.npz
+│   ├── figure3_scores_test.npz — SSH skill scores, test split
+│   └── figure3_scores_val.npz  — SSH skill scores, validation split
 │
 ├── figures/main/               Publication-ready figures (PDF + PNG)
-│   ├── figure2.pdf/png         SSH domain map (→ paper Fig 1)
-│   ├── figure3.pdf/png         SSH central result (→ paper Fig 2)
-│   ├── figure4.pdf/png         L96 sweep (→ paper Fig 3)
-│   └── figure_ensemble_comparison.pdf/png  (→ paper Fig 4)
+│   ├── figure1.pdf/png         SSH central result (paper Fig 1)
+│   ├── figure1_inset.pdf/png   SSH central result with inset variant
+│   ├── figure2.pdf/png         SSH domain map and arc diagram (paper Fig 2)
+│   ├── figure3.pdf/png         L96 training-volume sweep (paper Fig 3)
+│   └── figure4.pdf/png         Ensemble comparison (paper Fig 4)
 │
 ├── envs/ml_env.yml             Conda environment (model training)
 └── envs/glorys_dl_env.yml      Conda environment (data download)
@@ -230,5 +232,5 @@ Test set CRPS skill vs GLORYS seasonal climatology: mean **+0.064** across all s
 | Dynamical, σ_ic = 0.158 (spread-matched) | +0.629 | +0.570 | 0.91 |
 | Det. emulator, σ_ic = 0.158 | +0.371 | +0.216 | 0.58 |
 
-The dynamical ensemble in the linear regime (VS/CRPS ≈ 1) shows that chaos alone does not cause joint-skill deficit. The residual gap between the spread-matched dynamical (0.91) and DDPM (0.75) implicates the score-matching training objective.
+The dynamical ensemble in the linear regime (VS/CRPS ≈ 1) shows that chaos alone does not cause joint-skill deficit. The gap is present in the DDPM and deterministic emulator but not in the dynamical model.
 
