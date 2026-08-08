@@ -232,8 +232,3 @@ Test set CRPS skill vs GLORYS seasonal climatology: mean **+0.064** across all s
 
 The dynamical ensemble in the linear regime (VS/CRPS ≈ 1) shows that chaos alone does not cause joint-skill deficit. The residual gap between the spread-matched dynamical (0.91) and DDPM (0.75) implicates the score-matching training objective.
 
----
-
-## Citation
-
-Paper submitted to Geophysical Research Letters. Citation will be added upon acceptance.
