@@ -69,6 +69,14 @@ def process_and_save(variable: str = "sst") -> xr.DataArray:
     print(f"Saving trend coefficients → trend_{variable}.nc ...")
     save_trend(trend, variable)
 
+    if variable == "ssh":
+        # The dataset caches the gauge-interpolated SSH; drop it so the next
+        # load rebuilds it from the new anomalies instead of using stale targets.
+        gauge_cache = out_path.parent / "gauge_ssh_interp.npy"
+        if gauge_cache.exists():
+            gauge_cache.unlink()
+            print(f"Removed stale {gauge_cache.name} (rebuilt on next dataset load)")
+
     print("Done.")
     return weekly_dt
 

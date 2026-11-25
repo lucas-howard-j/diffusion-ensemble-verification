@@ -1,0 +1,7 @@
+Integrating 2000 × 500 members  (lead=20 steps = 1.00 TU, σ_ic=0.1578) ...
+  IC 0/2000
+  IC 1000/2000
+  Done.
+CRPS skill=+0.6293  VS skill=+0.5701  spread=0.5958  σ_ic=0.1578
+Bootstrapping CIs ...
+Saved → lorenz96/ensemble_results/dyn_results.npz

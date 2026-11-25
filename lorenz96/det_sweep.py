@@ -41,6 +41,7 @@ N_ENS    = 500
 N_BOOT   = 1_000
 CHUNK    = 100
 SEED     = 42
+IC_WINDOW_LEAD = 60   # = max(dyn_sweep.LEAD_VALUES); shared IC selection
 
 
 def _tag(frac: float) -> str:
@@ -92,7 +93,10 @@ def run(n_eval: int, n_ens: int, n_boot: int) -> None:
     test_raw  = states[TEST_START:]
     train_raw = states[:TRAIN_END]
 
-    max_avail = len(test_raw) - lead
+    # Select ICs exactly as dyn_sweep.py does (window = its longest lead, 60
+    # steps; same seed), so the two σ_IC sweeps in Figure 5 share their test
+    # ICs and climatological draws.
+    max_avail = len(test_raw) - IC_WINDOW_LEAD
     n_use     = min(n_eval, max_avail)
     ic_idx    = rng.choice(max_avail, size=n_use, replace=False)
     ic_idx.sort()

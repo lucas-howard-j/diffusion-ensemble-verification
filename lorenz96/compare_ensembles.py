@@ -53,8 +53,9 @@ def _select_test_ics(states, lead, n_eval, seed=42):
     return idx, rng
 
 
-def _clim_baseline(states, idx, n_ens, mu, sigma, seed=42):
-    rng = np.random.default_rng(seed + 1)
+def _clim_baseline(states, idx, n_ens, mu, sigma, rng):
+    """Climatological draws from the IC-selection rng, continuing the same
+    stream as ensemble_{dynamical,deterministic,crps,ddpm}.py (seed 42)."""
     train_raw = states[:TRAIN_END]
     clim_idx  = rng.integers(0, len(train_raw), size=(len(idx), n_ens))
     return (train_raw[clim_idx] - mu) / sigma   # (n, M, N)
@@ -165,7 +166,8 @@ def _score(target_norm, ens_norm, clim_ens_norm):
     crps_ens  = crps_ensemble(target_norm, ens_norm).mean(0)
     crps_clim = crps_ensemble(target_norm, clim_ens_norm).mean(0)
     crps_node = 1 - crps_ens / crps_clim
-    crps_skill = float(crps_node.mean())
+    # Ratio of means over ICs and nodes (the statistic bootstrap_skill_ci resamples)
+    crps_skill = float(1 - crps_ens.mean() / crps_clim.mean())
 
     vs_ens   = variogram_score(target_norm, ens_norm)
     vs_clim  = variogram_score(target_norm, clim_ens_norm)
@@ -246,7 +248,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ddpm-ckpt",  default="lorenz96/sweep/checkpoints/ddpm_lead20_249000.pt")
     parser.add_argument("--det-ckpt",   default="lorenz96/checkpoints/det_emulator.pt")
-    parser.add_argument("--data",       default="lorenz96/data/l96_trajectory.npz")
+    parser.add_argument("--data",       default="lorenz96/l96_trajectory.npz")
     parser.add_argument("--n-eval",     type=int, default=2_000)
     parser.add_argument("--n-ens",      type=int, default=500)
     parser.add_argument("--sigma-ic",   type=float, default=None,
@@ -273,7 +275,8 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     states, data_cfg = load_trajectory(args.data)
-    idx, _  = _select_test_ics(states, 20, args.n_eval)   # lead placeholder; updated below
+    lead = int(torch.load(args.ddpm_ckpt, map_location="cpu", weights_only=False)["lead_steps"])
+    idx, ic_rng = _select_test_ics(states, lead, args.n_eval)
 
     # ---- DDPM ----
     print("\n" + "=" * 60)
@@ -286,11 +289,9 @@ def main():
     sigma = ddpm_out["sigma"]
     lead  = ddpm_out["lead"]
 
-    # Recompute idx with the correct lead
-    idx, _ = _select_test_ics(states, lead, args.n_eval)
     target_norm     = ddpm_out["target_norm"]
     ddpm_ens_norm   = ddpm_out["ens_norm"]
-    clim_ens_norm   = _clim_baseline(states, idx, args.n_ens, mu, sigma)
+    clim_ens_norm   = _clim_baseline(states, idx, args.n_ens, mu, sigma, ic_rng)
 
     ddpm_scores = _score(target_norm, ddpm_ens_norm, clim_ens_norm)
     ddpm_scores["spread"] = ddpm_out["spread"]

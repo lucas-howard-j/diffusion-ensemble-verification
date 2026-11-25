@@ -1,0 +1,7 @@
+Det. emulator sweep  lead=20  n_eval=2000  n_ens=500  device=mps
+  σ_ic=0.01  CRPS=+0.2485  VS=+0.1002  → lorenz96/sweep/det_results_sic01.npz
+  σ_ic=0.02  CRPS=+0.2706  VS=+0.1127  → lorenz96/sweep/det_results_sic02.npz
+  σ_ic=0.05  CRPS=+0.3208  VS=+0.1561  → lorenz96/sweep/det_results_sic05.npz
+  σ_ic=0.10  CRPS=+0.3625  VS=+0.2047  → lorenz96/sweep/det_results_sic10.npz
+  σ_ic=0.20  CRPS=+0.3639  VS=+0.2071  → lorenz96/sweep/det_results_sic20.npz
+  σ_ic=0.40  CRPS=+0.2775  VS=+0.0872  → lorenz96/sweep/det_results_sic40.npz

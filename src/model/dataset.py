@@ -18,6 +18,8 @@ each boundary to prevent temporal leakage.
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -48,7 +50,15 @@ SPLITS = {
 
 
 def _align_to(series: pd.Series, time_index: pd.DatetimeIndex) -> np.ndarray:
-    """Align a Series to time_index via nearest-neighbor, return float32 array."""
+    """Align a Series to time_index via nearest-neighbor, return float32 array.
+
+    Weeks after the series ends are filled with its last value; warn so this
+    is never silent (NAO/ENSO currently end 2025-01-06).
+    """
+    n_after = int((time_index > series.index[-1] + pd.Timedelta(days=3)).sum())
+    if n_after:
+        warnings.warn(f"{series.name or 'index'} ends {series.index[-1].date()}; "
+                      f"{n_after} later weeks forward-filled with its last value")
     return series.reindex(time_index, method="nearest").values.astype(np.float32)
 
 
@@ -97,10 +107,17 @@ class SSHDiffusionDataset(Dataset):
     Parameters
     ----------
     split : "train", "val", or "test"
+    ssh_lags, nao_lags : optional overrides of SSH_LAGS / NAO_LAGS (ablations).
+        They change only the conditioning vector; the set of valid (t, lead)
+        pairs is always built from the configured lags, so every variant sees
+        the same samples.
     """
 
-    def __init__(self, split: str = "train"):
+    def __init__(self, split: str = "train", ssh_lags: list[int] | None = None,
+                 nao_lags: list[int] | None = None):
         self.split  = split
+        self.ssh_lags = list(SSH_LAGS if ssh_lags is None else ssh_lags)
+        self.nao_lags = list(NAO_LAGS if nao_lags is None else nao_lags)
         self.leads  = list(LEAD_WEEKS)
         self.max_lead = max(self.leads)
 
@@ -127,8 +144,16 @@ class SSHDiffusionDataset(Dataset):
 
         # ── Load SSH anomaly field and interpolate to gauge locations ─────────
         _gauge_cache = PROC / "gauge_ssh_interp.npy"
-        if _gauge_cache.exists():
+        _stale = (_gauge_cache.exists() and SSH_ANOM_WEEKLY.exists()
+                  and SSH_ANOM_WEEKLY.stat().st_mtime > _gauge_cache.stat().st_mtime)
+        if _stale:
+            print(f"{_gauge_cache.name} is older than {SSH_ANOM_WEEKLY.name}; rebuilding it")
+        if _gauge_cache.exists() and not _stale:
             gauge_ssh = np.load(str(_gauge_cache))
+            if len(gauge_ssh) != len(time_axis):
+                raise ValueError(
+                    f"{_gauge_cache} has {len(gauge_ssh)} weeks but the EOF time axis has "
+                    f"{len(time_axis)}; delete it to rebuild from {SSH_ANOM_WEEKLY.name}.")
         else:
             print("Interpolating SSH anomaly field to gauge locations ...")
             da_ssh = xr.open_dataarray(str(SSH_ANOM_WEEKLY))
@@ -204,14 +229,14 @@ class SSHDiffusionDataset(Dataset):
             parts.append(self.sst_pcs[t - lag])
 
         # SSH PCs at t, t-1, t-2, t-4  (init state + lagged memory; no leakage since lead >= 2wk)
-        for lag in SSH_LAGS:
+        for lag in self.ssh_lags:
             parts.append(self.ssh_pcs[t - lag])
 
         # Wind PCs at current time t
         parts.append(self.wind_pcs[t])
 
         # NAO at t
-        for lag in NAO_LAGS:
+        for lag in self.nao_lags:
             parts.append(np.array([self.nao[t - lag]], dtype=np.float32))
 
         # ENSO at t, t-4, t-8, t-13
@@ -232,12 +257,17 @@ class SSHDiffusionDataset(Dataset):
     @property
     def cond_dim(self) -> int:
         return (N_SST_MODES * len(SST_LAGS)
-                + N_SSH_MODES * len(SSH_LAGS)
+                + N_SSH_MODES * len(getattr(self, "ssh_lags", SSH_LAGS))
                 + N_WIND_MODES
-                + len(NAO_LAGS)
+                + len(getattr(self, "nao_lags", NAO_LAGS))
                 + len(ENSO_LAGS)
                 + len(TIDE_GAUGES)   # gauge SSH at t
                 + 1)   # lead
+
+    def as_tensors(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """All (cond, target) pairs stacked in index order — for in-memory training."""
+        conds, targets = zip(*(self[i] for i in range(len(self))))
+        return torch.stack(conds), torch.stack(targets)
 
     @property
     def target_dim(self) -> int:

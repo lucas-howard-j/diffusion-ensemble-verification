@@ -2,7 +2,12 @@
 Train the DDPM denoiser on (condition, SSH_PCs) pairs.
 
 Run as a script:
-    python -m src.model.train
+    python -m src.model.train --out ddpm_best_build2025.pt --seed 0
+
+Every setting defaults to src/config.py; the flags below override one at a time
+for ablations (see scripts/run_ablation.sh).  The dataset is held in memory and
+batched directly (shuffled, last partial training batch dropped, validation in
+order), which is equivalent to the DataLoader setup but much faster.
 """
 from __future__ import annotations
 
@@ -14,7 +19,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 
 from src.config import (
     BATCH_SIZE, LR, WEIGHT_DECAY, MAX_EPOCHS, PATIENCE,
@@ -37,34 +41,45 @@ def _update_ema(ema_model: nn.Module, model: nn.Module, decay: float = EMA_DECAY
             pe.data.mul_(decay).add_(p.data, alpha=1.0 - decay)
 
 
-def train(device: str | None = None) -> None:
+def train(device: str | None = None, ckpt_name: str = "ddpm_best_sched50.pt",
+          seed: int | None = None, *, lr: float = LR, dropout: float = DROPOUT,
+          hidden: tuple[int, ...] = HIDDEN_DIMS, use_beta_silu: bool = True,
+          beta_schedule: str = BETA_SCHEDULE, ssh_lags: list[int] | None = None,
+          nao_lags: list[int] | None = None, log_dir: str | Path = "logs") -> None:
     device = device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Device: {device}")
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
 
     # Data
-    train_ds = SSHDiffusionDataset(split="train")
-    val_ds   = SSHDiffusionDataset(split="val")
+    train_ds = SSHDiffusionDataset(split="train", ssh_lags=ssh_lags, nao_lags=nao_lags)
+    val_ds   = SSHDiffusionDataset(split="val",   ssh_lags=ssh_lags, nao_lags=nao_lags)
     print(f"Train pairs: {len(train_ds)}  |  Val pairs: {len(val_ds)}")
+    print(f"Config: lr={lr:g} dropout={dropout} hidden={tuple(hidden)} beta_silu={use_beta_silu} "
+          f"schedule={beta_schedule} ssh_lags={train_ds.ssh_lags} nao_lags={train_ds.nao_lags} "
+          f"cond_dim={train_ds.cond_dim}")
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,  drop_last=True)
-    val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False)
+    Xtr, Ytr = (a.to(device) for a in train_ds.as_tensors())
+    Xva, Yva = (a.to(device) for a in val_ds.as_tensors())
+    n_train_batches = len(Xtr) // BATCH_SIZE          # drop_last
 
     # Model
     model = MLPDenoiser(
         target_dim=train_ds.target_dim,
         cond_dim=train_ds.cond_dim,
-        hidden=HIDDEN_DIMS,
-        dropout=DROPOUT,
-        use_beta_silu=True,
+        hidden=tuple(hidden),
+        dropout=dropout,
+        use_beta_silu=use_beta_silu,
     ).to(device)
 
     ema_model = copy.deepcopy(model).eval()
     for p in ema_model.parameters():
         p.requires_grad_(False)
 
-    schedule = DDPMSchedule().to(device)
+    schedule = DDPMSchedule(schedule=beta_schedule).to(device)
 
-    opt = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt, mode="min", factor=0.5, patience=50, min_lr=1e-7
     )
@@ -74,11 +89,13 @@ def train(device: str | None = None) -> None:
     patience_counter = 0
 
     CHECKPOINTS.mkdir(parents=True, exist_ok=True)
-    ckpt_path = CHECKPOINTS / "ddpm_best_sched50.pt"
+    ckpt_path = CHECKPOINTS / ckpt_name
 
     # Beta logging
-    beta_log_path = Path("logs/beta_history.csv")
-    beta_log_path.parent.mkdir(exist_ok=True)
+    stem = Path(ckpt_name).stem.removeprefix("ddpm_best").lstrip("_")
+    beta_log_path = Path(log_dir) / f"beta_history{'_' + stem if stem else ''}.csv"
+    beta_log_path.parent.mkdir(parents=True, exist_ok=True)
+    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
     n_beta_layers = len([m for m in model.modules()
                          if m.__class__.__name__ == "BetaSiLU"])
     beta_log_file = beta_log_path.open("w", newline="")
@@ -92,8 +109,10 @@ def train(device: str | None = None) -> None:
         t0 = time.time()
         model.train()
         train_losses = []
-        for cond, target in train_loader:
-            cond, target = cond.to(device), target.to(device)
+        perm = torch.randperm(len(Xtr), device="cpu").to(device)
+        for k in range(n_train_batches):
+            idx = perm[k * BATCH_SIZE:(k + 1) * BATCH_SIZE]
+            cond, target = Xtr[idx], Ytr[idx]
             noise = torch.randn_like(target)
             t = torch.randint(0, schedule.T, (target.shape[0],), device=device)
             x_t = schedule.q_sample(target, t, noise)
@@ -113,8 +132,8 @@ def train(device: str | None = None) -> None:
         model.eval()
         with torch.no_grad():
             val_losses = []
-            for cond, target in val_loader:
-                cond, target = cond.to(device), target.to(device)
+            for k in range(0, len(Xva), BATCH_SIZE):
+                cond, target = Xva[k:k + BATCH_SIZE], Yva[k:k + BATCH_SIZE]
                 noise = torch.randn_like(target)
                 t = torch.randint(0, schedule.T, (target.shape[0],), device=device)
                 x_t = schedule.q_sample(target, t, noise)
@@ -148,10 +167,14 @@ def train(device: str | None = None) -> None:
                 "gauge_mu":  train_ds.gauge_mu,  "gauge_std":  train_ds.gauge_std,
                 "cond_dim":      train_ds.cond_dim,
                 "target_dim":    train_ds.target_dim,
-                "hidden_dims":    HIDDEN_DIMS,
-                "dropout":        DROPOUT,
-                "beta_schedule":  BETA_SCHEDULE,
-                "use_beta_silu":  True,
+                "hidden_dims":    tuple(hidden),
+                "dropout":        dropout,
+                "beta_schedule":  beta_schedule,
+                "use_beta_silu":  use_beta_silu,
+                "lr":             lr,
+                "seed":           seed,
+                "ssh_lags":       train_ds.ssh_lags,
+                "nao_lags":       train_ds.nao_lags,
             }, ckpt_path)
         else:
             patience_counter += 1
@@ -165,4 +188,22 @@ def train(device: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    train()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out", default="ddpm_best_sched50.pt", help="checkpoint filename")
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--device", default=None)
+    parser.add_argument("--lr", type=float, default=LR)
+    parser.add_argument("--dropout", type=float, default=DROPOUT)
+    parser.add_argument("--hidden", type=int, nargs="+", default=list(HIDDEN_DIMS))
+    parser.add_argument("--beta-silu", action=argparse.BooleanOptionalAction, default=True,
+                        help="BetaSiLU activation (--no-beta-silu: plain SiLU)")
+    parser.add_argument("--beta-schedule", choices=["linear", "cosine"], default=BETA_SCHEDULE)
+    parser.add_argument("--ssh-lags", type=int, nargs="+", default=None)
+    parser.add_argument("--nao-lags", type=int, nargs="+", default=None)
+    parser.add_argument("--log-dir", default="logs", help="directory for the beta-history csv")
+    args = parser.parse_args()
+    train(device=args.device, ckpt_name=args.out, seed=args.seed, lr=args.lr,
+          dropout=args.dropout, hidden=tuple(args.hidden), use_beta_silu=args.beta_silu,
+          beta_schedule=args.beta_schedule, ssh_lags=args.ssh_lags, nao_lags=args.nao_lags,
+          log_dir=args.log_dir)

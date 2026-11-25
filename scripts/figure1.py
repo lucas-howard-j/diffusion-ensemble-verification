@@ -1,17 +1,21 @@
 """
-Figure 3 — SSH central result (three panels).
+Figure 1 — SSH marginal vs joint skill of the DDPM (three panels).
 
-(a) Marginal CRPS skill vs lead — station-mean, one bar per lead
-(b) Energy score skill vs lead — 4 grouped bars: DDPM / DDPM-shuf / GLORYS-draw / GLORYS-shuf
-(c) Variogram score skill vs lead — same 4-bar structure (p=0.5, equal weights)
+(a) Marginal CRPS skill vs lead — station mean
+(b) Energy score skill vs lead
+(c) Variogram score skill vs lead (p=0.5, equal weights)
+
+All skills are ratio of means, 1 − mean(score)/mean(clim score), against
+same-calendar-month GLORYS training-period draws, with 95 % block-bootstrap CIs.
+This module also computes the per-init scores (original and shuffled ensembles)
+used by figure2.py and ddpm_seed_spread.py.
 
 Reference draws use per-(init, lead) seeds so results are fully reproducible and
 independent of processing order.  Scores are cached to results/figure3_scores_{split}.npz;
 use --rerun to force recomputation.
 
 Run:
-    PYTHONPATH=. python scripts/figure1.py --ckpt checkpoints/ddpm_best_gauge_init.pt [--split val] [--rerun]
-    PYTHONPATH=. python scripts/figure1.py --split val          # uses cached scores
+    PYTHONPATH=. python scripts/figure1.py [--split test|val] [--ckpt CKPT] [--rerun]
 """
 from __future__ import annotations
 
@@ -24,16 +28,14 @@ import torch
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import matplotlib.patches
-from matplotlib.lines import Line2D
 
-from src.config import LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
+from src.config import CHECKPOINTS, LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
-from src.evaluation.metrics import block_bootstrap_ci
+from src.evaluation.metrics import joint_skill_summary
 from src.evaluation.scores import crps, energy_score, variogram_score
 
+DEFAULT_CKPT = CHECKPOINTS / "ddpm_best_build2025.pt"   # primary 2025-build DDPM
 N_MEMBERS  = 500
 BLOCK_SIZE = 3      # weeks; matches ~2–3wk score decorrelation time
 N_BOOT     = 1000
@@ -43,7 +45,6 @@ CACHE_DIR  = Path("results")
 OUT_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 
-_LEAD_COLORS     = ["#08519c", "#2171b5", "#6baed6", "#bdd7e7"]
 _DDPM_COLOR      = "#2166ac"
 _DDPM_SHUF_COLOR = "#92c5de"
 _CLIM_COLOR      = "#555555"
@@ -100,6 +101,7 @@ def run_inference(ckpt_path: Path | None, split: str) -> dict:
         """Deterministic, order-independent seed for GLORYS reference draws."""
         return np.random.default_rng(hash((t_val, lead)) % (2 ** 31))
 
+    torch.manual_seed(0)   # reproducible DDPM sampling
     model.eval()
     with torch.no_grad():
         for i, t_val in enumerate(valid_ts):
@@ -167,24 +169,48 @@ def run_inference(ckpt_path: Path | None, split: str) -> dict:
     )
 
 
-# ── Bootstrap CI ─────────────────────────────────────────────────────────────
+# ── Summary (shared with figure2.py and ddpm_seed_spread.py) ──────────────────
 
-def _ci(skill_ts: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
-    """Block bootstrap 95 % CI on column means.  skill_ts: (N, n_cols)"""
-    return block_bootstrap_ci(skill_ts, BLOCK_SIZE, N_BOOT, CI_ALPHA, rng)
+def load_scores(split: str, ckpt: Path | None = None, rerun: bool = False) -> dict:
+    """Cached per-init scores for `split`; runs inference with `ckpt` if missing or rerun.
+
+    The primary checkpoint uses results/figure3_scores_{split}.npz (legacy name,
+    also read by figure2.py); any other checkpoint gets its own cache file, so
+    --ckpt never silently returns another model's scores or overwrites Figure 2's.
+    """
+    ckpt = Path(ckpt) if ckpt is not None else DEFAULT_CKPT
+    if ckpt.name == DEFAULT_CKPT.name:
+        cache_path = CACHE_DIR / f"figure3_scores_{split}.npz"   # legacy cache name
+    else:
+        cache_path = CACHE_DIR / f"figure3_scores_{split}_{ckpt.stem}.npz"
+    if cache_path.exists() and not rerun:
+        cached = dict(np.load(cache_path, allow_pickle=True))
+        cached_ckpt = str(cached.get("ckpt", DEFAULT_CKPT.name))   # older caches: primary model
+        if cached_ckpt != ckpt.name:
+            raise ValueError(f"{cache_path} holds scores for {cached_ckpt}, not {ckpt.name}; "
+                             "use --rerun to recompute.")
+        print(f"Loading cached scores from {cache_path}")
+        return cached
+    print("Running inference ...")
+    scores = run_inference(ckpt, split)
+    scores["ckpt"] = np.array(ckpt.name)
+    np.savez(cache_path, **scores)
+    print(f"Saved scores to {cache_path}")
+    return scores
 
 
-# ── Figure ───────────────────────────────────────────────────────────────────
+def summarise(scores: dict) -> dict:
+    """Ratio-of-means skills with 95 % block-bootstrap CIs; prints the summary tables.
 
-def make_figure(scores: dict) -> None:
+    Returns leads, crps (skill, lo, hi per lead), and es / vs dicts from
+    joint_skill_summary (skill per lead and column [model, model shuffled, clim,
+    clim shuffled]; pooled shuffle gaps Δ_model, Δ_clim, Δ_model − Δ_clim).
+    """
     crps_ddpm_arr = scores["crps_ddpm"]
     crps_ref_arr  = scores["crps_ref"]
-    es_arr        = scores["es"]
-    vs_arr        = scores["vs"]
-    leads         = list(scores["leads"])
-    short         = list(scores["short"])
-    n_leads       = len(leads)
-    n_st          = crps_ddpm_arr.shape[2]
+    es_arr, vs_arr = scores["es"], scores["vs"]
+    leads   = list(scores["leads"])
+    n_leads = len(leads)
 
     es_ok = np.all(np.isfinite(es_arr), axis=(1, 2))
     vs_ok = np.all(np.isfinite(vs_arr), axis=(1, 2))
@@ -192,216 +218,100 @@ def make_figure(scores: dict) -> None:
 
     rng_boot = np.random.default_rng(42)
 
-    # Panel (a): station-mean CRPS skill per lead.
-    # Use ratio-of-time-means (matches rmse_vs_lead.py) — robust to outlier reference draws.
-    # mean-of-ratios is biased negative when any single ref draw is near zero.
-    crps_skill = (
-        1 - crps_ddpm_arr.mean(0) / crps_ref_arr.mean(0)
-    ).mean(-1)   # (n_leads,): ratio-of-means per station, then station-mean
-
-    # Bootstrap: resample raw scores and recompute ratio-of-means, same as rmse_vs_lead.py
+    # CRPS: ratio of means per station, then station mean (matches rmse_vs_lead.py)
+    crps_skill = (1 - crps_ddpm_arr.mean(0) / crps_ref_arr.mean(0)).mean(-1)
     N = crps_ddpm_arr.shape[0]
-    n_blocks  = int(np.ceil(N / BLOCK_SIZE))
-    max_start = max(0, N - BLOCK_SIZE)
+    n_blocks, max_start = int(np.ceil(N / BLOCK_SIZE)), max(0, N - BLOCK_SIZE)
     boot_crps = np.empty((N_BOOT, n_leads))
     for b in range(N_BOOT):
         starts = rng_boot.integers(0, max_start + 1, size=n_blocks)
         idx    = np.concatenate([np.arange(s, s + BLOCK_SIZE) for s in starts])[:N]
-        skill  = 1 - crps_ddpm_arr[idx].mean(0) / crps_ref_arr[idx].mean(0)  # (n_leads, n_st)
-        boot_crps[b] = skill.mean(-1)   # station-mean
-    crps_lo = np.percentile(boot_crps, 100 * CI_ALPHA / 2,       axis=0)
+        boot_crps[b] = (1 - crps_ddpm_arr[idx].mean(0) / crps_ref_arr[idx].mean(0)).mean(-1)
+    crps_lo = np.percentile(boot_crps, 100 * CI_ALPHA / 2, axis=0)
     crps_hi = np.percentile(boot_crps, 100 * (1 - CI_ALPHA / 2), axis=0)
 
-    # Panels (b) and (c): skill scores only
-    def _skill_and_ci(arr, ok_mask):
-        a        = arr[ok_mask]
-        ref      = a[:, :, 2:3]
-        per_init = 1 - a / (ref + 1e-12)           # (N', n_leads, 4)
-        mean     = per_init.mean(0)
-        lo       = np.zeros_like(mean)
-        hi       = np.zeros_like(mean)
-        for col in [0, 1, 3]:
-            l, h = _ci(per_init[:, :, col], rng_boot)
-            lo[:, col] = l
-            hi[:, col] = h
-        # Return per-init delta time series for pooled bootstrap in panel (d)
-        delta_ddpm   = per_init[:, :, 0] - per_init[:, :, 1]   # (N', n_leads)
-        delta_clim   = per_init[:, :, 2] - per_init[:, :, 3]
-        delta_excess = delta_ddpm - delta_clim
-        return mean, lo, hi, delta_ddpm, delta_clim, delta_excess
+    # ES / VS: same ratio-of-means convention; shuffle gaps pooled over leads
+    es = joint_skill_summary(es_arr[es_ok], BLOCK_SIZE, N_BOOT, CI_ALPHA, rng_boot)
+    vs = joint_skill_summary(vs_arr[vs_ok], BLOCK_SIZE, N_BOOT, CI_ALPHA, rng_boot)
 
-    es_mean, es_lo, es_hi, es_dd, es_dc, es_de = _skill_and_ci(es_arr, es_ok)
-    vs_mean, vs_lo, vs_hi, vs_dd, vs_dc, vs_de = _skill_and_ci(vs_arr, vs_ok)
-
-    # Panel (d): pool each delta across leads (lead-mean per init), then block-bootstrap
-    def _pooled_ci(ts: np.ndarray) -> tuple[float, float]:
-        """ts: (N, n_leads) → average across leads, block-bootstrap CI on the mean."""
-        lead_mean = ts.mean(axis=1)   # (N,)
-        N_p = len(lead_mean)
-        nb  = int(np.ceil(N_p / BLOCK_SIZE))
-        ms  = max(0, N_p - BLOCK_SIZE)
-        boot = np.array([
-            lead_mean[np.concatenate([np.arange(s, s + BLOCK_SIZE)
-                       for s in rng_boot.integers(0, ms + 1, size=nb)])[:N_p]].mean()
-            for _ in range(N_BOOT)
-        ])
-        return float(np.percentile(boot, 100 * CI_ALPHA / 2)), \
-               float(np.percentile(boot, 100 * (1 - CI_ALPHA / 2)))
-
-    d_series = [es_dd, es_dc, es_de, vs_dd, vs_dc, vs_de]
-    d_vals   = np.array([ts.mean() for ts in d_series])
-    d_lo_p   = np.zeros(6)
-    d_hi_p   = np.zeros(6)
-    for i, ts in enumerate(d_series):
-        d_lo_p[i], d_hi_p[i] = _pooled_ci(ts)
-
-    # Summary tables
     print("\nCRPS skill (1 − CRPS/CRPS_ref)  [station-mean per lead]:")
     for j, l in enumerate(leads):
         print(f"  {l:>2}wk  {crps_skill[j]:>+.4f}  [{crps_lo[j]:>+.4f}, {crps_hi[j]:>+.4f}]")
-    print("\nEnergy score skill  (1 − ES/ES_clim):")
-    print(f"{'Lead':>6}  {'DDPM':>8}  {'DDPM-shuf':>10}  {'GLORYS-shuf':>12}")
-    for j, l in enumerate(leads):
-        print(f"  {l:>2}wk  {es_mean[j,0]:>+.4f}  {es_mean[j,1]:>+.4f}  {es_mean[j,3]:>+.4f}")
-    print("\nVariogram score skill  (1 − VS/VS_clim, p=0.5):")
-    print(f"{'Lead':>6}  {'DDPM':>8}  {'DDPM-shuf':>10}  {'GLORYS-shuf':>12}")
-    for j, l in enumerate(leads):
-        print(f"  {l:>2}wk  {vs_mean[j,0]:>+.4f}  {vs_mean[j,1]:>+.4f}  {vs_mean[j,3]:>+.4f}")
-    print("\nPooled deltas (lead-mean ± 95% CI):")
-    d_names = ["ES Δ_DDPM", "ES Δ_GLORYS", "ES Δ−Δ_clim",
-               "VS Δ_DDPM", "VS Δ_GLORYS", "VS Δ−Δ_clim"]
-    for name, val, lo, hi in zip(d_names, d_vals, d_lo_p, d_hi_p):
-        sig = "*" if (lo > 0 or hi < 0) else " "
-        print(f"  {name:<16}  {val:>+.4f}  [{lo:>+.4f}, {hi:>+.4f}] {sig}")
+    for name, sm in [("Energy score skill  (1 − ES/ES_clim)", es),
+                     ("Variogram score skill  (1 − VS/VS_clim, p=0.5)", vs)]:
+        print(f"\n{name}:")
+        print(f"{'Lead':>6}  {'DDPM':>22}  {'DDPM-shuf':>10}  {'GLORYS-shuf':>12}")
+        for j, l in enumerate(leads):
+            k = sm["skill"][j]
+            print(f"  {l:>2}wk  {k[0]:>+.4f} [{sm['skill_lo'][j, 0]:>+.4f},{sm['skill_hi'][j, 0]:>+.4f}]"
+                  f"  {k[1]:>+.4f}  {k[3]:>+.4f}")
+    print("\nPooled shuffle gaps (lead-mean ± 95% CI):")
+    for score, sm in [("ES", es), ("VS", vs)]:
+        for lbl, v, lo, hi in zip(["Δ_DDPM", "Δ_GLORYS", "Δ−Δ_clim"],
+                                  sm["delta"], sm["delta_lo"], sm["delta_hi"]):
+            sig = "*" if (lo > 0 or hi < 0) else " "
+            print(f"  {score} {lbl:<10}  {v:>+.4f}  [{lo:>+.4f}, {hi:>+.4f}] {sig}")
 
-    # Build figure: 2×2 layout
-    fig = plt.figure(figsize=(7.0, 5.2))
-    gs  = gridspec.GridSpec(2, 2, figure=fig, hspace=0.45, wspace=0.40)
-    ax_a = fig.add_subplot(gs[0, 0])
-    ax_b = fig.add_subplot(gs[0, 1])
-    ax_c = fig.add_subplot(gs[1, 0])
-    ax_d = fig.add_subplot(gs[1, 1])
+    return dict(leads=leads, crps=(crps_skill, crps_lo, crps_hi), es=es, vs=vs)
 
-    FS_TICK  = 6    # tick labels
-    FS_LABEL = 7    # axis labels
-    FS_TITLE = 7    # panel titles
-    FS_LEG   = 5.5  # legends
 
-    ld = np.array(leads)   # actual week values for x-axis
+# ── Figure style (shared with figure2.py) ─────────────────────────────────────
 
-    def _style_lead_ax(ax, ylabel, title, leg_loc="lower left",
-                       zero_line=True, leg_outside=False):
-        if zero_line:
-            ax.axhline(0, color="k", lw=0.8, ls="--")
-        ax.set_xticks(ld)
-        ax.set_xticklabels([f"{l}wk" for l in leads], fontsize=FS_TICK)
-        ax.set_xlabel("Lead time", fontsize=FS_LABEL)
-        ax.set_ylabel(ylabel, fontsize=FS_LABEL)
-        ax.set_title(title, fontweight="bold", fontsize=FS_TITLE)
-        ax.tick_params(labelsize=FS_TICK)
-        if leg_outside:
-            ax.legend(fontsize=FS_LEG, loc="upper center",
-                      bbox_to_anchor=(0.5, -0.22), ncol=3,
-                      borderaxespad=0, frameon=True)
-        else:
-            ax.legend(fontsize=FS_LEG, loc=leg_loc)
-        ax.grid(True, alpha=0.2, lw=0.5)
+FS_TICK, FS_LABEL, FS_TITLE, FS_LEG = 6, 7, 7, 5.5
 
-    # Panel (a): single line + shaded 95 % CI
-    ax_a.plot(ld, crps_skill, "o-", color=_DDPM_COLOR, lw=1.2, ms=3)
-    ax_a.fill_between(ld, crps_lo, crps_hi, color=_DDPM_COLOR, alpha=0.18)
-    _style_lead_ax(ax_a, "CRPS skill", "(a) Marginal CRPS skill", leg_loc="upper right")
 
-    # Panels (b) and (c): one line per series with shaded CI
-    _LINE_STYLES = ["-", "--", ":"]
-    _MARKERS     = ["o", "s", "^"]
+def style_lead_ax(ax, leads, ylabel, title):
+    ld = np.array(leads)
+    ax.axhline(0, color="k", lw=0.8, ls="--")
+    ax.set_xticks(ld)
+    ax.set_xticklabels([f"{l}wk" for l in leads], fontsize=FS_TICK)
+    ax.set_xlabel("Lead time", fontsize=FS_LABEL)
+    ax.set_ylabel(ylabel, fontsize=FS_LABEL)
+    ax.set_title(title, fontweight="bold", fontsize=FS_TITLE)
+    ax.tick_params(labelsize=FS_TICK)
+    ax.grid(True, alpha=0.2, lw=0.5)
 
-    def _plot_score_lines(ax, mean, lo, hi, title, ylabel,
-                          leg_loc="lower left", zero_line=True, leg_outside=False):
-        for col_idx, label, color, ls, mk in zip(
-                _BAR_COLS, _BAR_LABELS, _BAR_COLORS, _LINE_STYLES, _MARKERS):
-            vals = mean[:, col_idx]
-            ax.plot(ld, vals, ls + mk, color=color, lw=1.2, ms=3, label=label)
-            ax.fill_between(ld, lo[:, col_idx], hi[:, col_idx], color=color, alpha=0.15)
-        _style_lead_ax(ax, ylabel, title, leg_loc,
-                       zero_line=zero_line, leg_outside=leg_outside)
 
-    _plot_score_lines(ax_b, es_mean, es_lo, es_hi,
-                      "(b) Energy score skill", "ES skill")
-    _plot_score_lines(ax_c, vs_mean, vs_lo, vs_hi,
-                      "(c) Variogram score skill", r"VS skill  ($p$=0.5)",
-                      zero_line=True, leg_outside=True)
-    ax_c.set_ylim(top=0.1)
+# ── Figure 1 ─────────────────────────────────────────────────────────────────
 
-    err_kw = dict(elinewidth=0.6, capsize=2, ecolor="0.25")
-
-    # Panel (d): pooled deltas — ES on left axis, VS on right axis (scales differ ~50×)
-    _D_LABELS = [r"$\Delta$DDPM", r"$\Delta$GLORYS", r"$\Delta$DDPM$-\Delta$GLORYS"]
-    _D_COLORS = [_DDPM_COLOR, _CLIM_COLOR, "#b2182b"]
-    w_d   = 0.22
-    x_es  = np.array([-1, 0, 1]) * w_d          # ES bars centred at x=0
-    x_vs  = np.array([-1, 0, 1]) * w_d + 1.6    # VS bars centred at x=1.6
-
-    ax_d2 = ax_d.twinx()   # right axis for VS
-
-    for di, (label, color) in enumerate(zip(_D_LABELS, _D_COLORS)):
-        # ES bar — left axis
-        val    = d_vals[di]
-        err_lo = np.maximum(0, val - d_lo_p[di])
-        err_hi = np.maximum(0, d_hi_p[di] - val)
-        ax_d.bar(x_es[di], val, w_d, color=color, hatch="///", alpha=0.8,
-                 label=label, yerr=[[err_lo], [err_hi]], error_kw=err_kw)
-        if d_lo_p[di] > 0 or d_hi_p[di] < 0:
-            ax_d.text(x_es[di], d_hi_p[di] + 0.002, "*",
-                      ha="center", va="bottom", fontsize=8, color="k")
-
-        # VS bar — right axis
-        vi     = di + 3
-        val    = d_vals[vi]
-        err_lo = np.maximum(0, val - d_lo_p[vi])
-        err_hi = np.maximum(0, d_hi_p[vi] - val)
-        ax_d2.bar(x_vs[di], val, w_d, color=color, hatch="///", alpha=0.8,
-                  yerr=[[err_lo], [err_hi]], error_kw=err_kw)
-        if d_lo_p[vi] > 0 or d_hi_p[vi] < 0:
-            ax_d2.text(x_vs[di], d_hi_p[vi] + 0.01, "*",
-                       ha="center", va="bottom", fontsize=8, color="k")
-
-    # Align zeros: keep the data-driven upper limits, push lower limits down so
-    # that y=0 sits at the same fractional height on both axes.
-    es_hi = max(d_hi_p[0], d_hi_p[1], d_hi_p[2]) * 1.25
-    vs_hi = max(d_hi_p[3], d_hi_p[4], d_hi_p[5]) * 1.25
-    # natural negative extents (may be 0 if all bars positive)
-    es_lo_nat = min(d_lo_p[0], d_lo_p[1], d_lo_p[2], 0) * 1.25
-    vs_lo_nat = min(d_lo_p[3], d_lo_p[4], d_lo_p[5], 0) * 1.25
-    zero_frac = max(-es_lo_nat / (es_hi - es_lo_nat),
-                    -vs_lo_nat / (vs_hi - vs_lo_nat))
-    # given zero_frac and hi, lo = -zero_frac / (1 - zero_frac) * hi
-    ax_d.set_ylim(-zero_frac / (1 - zero_frac) * es_hi, es_hi)
-    ax_d2.set_ylim(-zero_frac / (1 - zero_frac) * vs_hi, vs_hi)
-
-    ax_d.axhline(0, color="k", lw=0.8, ls="--")
-    ax_d.set_xticks([0, 1.6])
-    ax_d.set_xticklabels(["ES", "VS"], fontsize=FS_TICK + 1, fontweight="bold")
-    ax_d.set_xlim(-0.55, 2.15)
-    ax_d.set_ylabel(r"ES  $\Delta$ skill  (pooled)", fontsize=FS_LABEL, color=_DDPM_COLOR)
-    ax_d.tick_params(axis="y", labelsize=FS_TICK, labelcolor=_DDPM_COLOR)
-    ax_d2.set_ylabel(r"VS  $\Delta$ skill  (pooled)", fontsize=FS_LABEL, color="#555555")
-    ax_d2.tick_params(axis="y", labelsize=FS_TICK, labelcolor="#555555")
-    ax_d.set_title("(d) Joint structure\ncontribution", fontweight="bold", fontsize=FS_TITLE)
-    ax_d.grid(True, axis="y", alpha=0.25, lw=0.6)
-
-    # Legend: bar labels + star explanation (no double-asterisk)
-    legend_handles = [
-        matplotlib.patches.Patch(facecolor=c, hatch="///", alpha=0.8, label=l)
-        for c, l in zip(_D_COLORS, _D_LABELS)
-    ] + [Line2D([], [], marker="*", color="k", linestyle="none", markersize=6,
-                label="p < 0.05  (block bootstrap)")]
-    ax_d.legend(handles=legend_handles, fontsize=FS_LEG, loc="upper center",
-                bbox_to_anchor=(0.5, -0.22), ncol=2, borderaxespad=0, frameon=True)
+def make_figure(summ: dict) -> None:
+    """Figure 1: marginal vs joint skill of the DDPM — CRPS, ES and VS skill vs lead."""
+    leads = summ["leads"]
+    ld = np.array(leads)
+    fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.4), gridspec_kw=dict(wspace=0.16))
+    panels = [
+        (summ["crps"], "", "(a) CRPS"),
+        ((summ["es"]["skill"][:, 0], summ["es"]["skill_lo"][:, 0], summ["es"]["skill_hi"][:, 0]),
+         "", "(b) Energy Score"),
+        ((summ["vs"]["skill"][:, 0], summ["vs"]["skill_lo"][:, 0], summ["vs"]["skill_hi"][:, 0]),
+         "", "(c) Variogram Score"),
+    ]
+    for ax, ((val, lo, hi), ylabel, title) in zip(axes, panels):
+        ax.plot(ld, val, "o-", color=_DDPM_COLOR, lw=1.2, ms=3, label="DDPM")
+        ax.fill_between(ld, lo, hi, color=_DDPM_COLOR, alpha=0.18, label="95% CI")
+        style_lead_ax(ax, leads, ylabel, title)
+        # Figure-1-local font sizes (larger than the shared defaults)
+        ax.set_xticklabels([str(l) for l in leads])
+        ax.set_xlabel("Lead time (weeks)")
+        ax.tick_params(labelsize=8)
+        ax.xaxis.label.set_fontsize(9)
+        ax.title.set_fontsize(9)
+        for t in ax.get_xticklabels():
+            t.set_fontsize(8)
+        ax.legend(fontsize=7, loc="lower left")
+    fig.supylabel("Skill Score", fontsize=9, x=0.04)
+    # common y-range so the three skills are visually comparable
+    lo_all = min(min(p[0][1]) for p in panels)
+    hi_all = max(max(p[0][2]) for p in panels)
+    pad = 0.1 * (hi_all - lo_all)
+    for ax in axes:
+        ax.set_ylim(lo_all - pad - 0.03, hi_all + pad)
+    for ax in axes[1:]:
+        ax.tick_params(labelleft=False)
 
     fig.savefig(OUT_DIR / "figure1.pdf", bbox_inches="tight", dpi=300)
     fig.savefig(OUT_DIR / "figure1.png", dpi=300, bbox_inches="tight")
-    print("\nSaved figures/figure1.pdf and figures/figure1.png")
+    print("\nSaved figures/main/figure1.pdf and figures/main/figure1.png")
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
@@ -409,25 +319,12 @@ def make_figure(scores: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt",  type=Path, default=None,
-                        help="Checkpoint path (only needed when running inference)")
-    parser.add_argument("--split", type=str,  default="val",
-                        help="Dataset split: val or test")
+                        help=f"Checkpoint for inference (default {DEFAULT_CKPT.name})")
+    parser.add_argument("--split", type=str,  default="test", help="val or test")
     parser.add_argument("--rerun", action="store_true",
                         help="Force rerun inference even if cache exists")
     args = parser.parse_args()
-
-    cache_path = CACHE_DIR / f"figure3_scores_{args.split}.npz"
-
-    if cache_path.exists() and not args.rerun:
-        print(f"Loading cached scores from {cache_path}")
-        scores = dict(np.load(cache_path, allow_pickle=True))
-    else:
-        print("Running inference ...")
-        scores = run_inference(args.ckpt, args.split)
-        np.savez(cache_path, **scores)
-        print(f"Saved scores to {cache_path}")
-
-    make_figure(scores)
+    make_figure(summarise(load_scores(args.split, args.ckpt, args.rerun)))
 
 
 if __name__ == "__main__":

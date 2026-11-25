@@ -110,6 +110,7 @@ def main(ckpt_path: Path | None, split: str) -> None:
     # vs_pairs_rec: (N, n_leads, n_pairs, 4) — [orig, shuf, clim, clim_shuf]
     vs_pairs_rec = np.full((N, n_leads, n_pairs, 4), np.nan)
     shuf_rng = np.random.default_rng(42)
+    torch.manual_seed(0)   # reproducible DDPM sampling
 
     model.eval()
     with torch.no_grad():

@@ -8,14 +8,31 @@ import torch
 
 from src.config import CHECKPOINTS
 from src.model.diffusion import DDPMSchedule
-from src.model.network import MLPDenoiser
+from src.model.network import CRPSGenerator, MLPDenoiser
 
 
 def load_checkpoint(path: Path | None = None, device: str | None = None):
-    """Load the EMA weights for inference."""
+    """Load the EMA weights for inference.
+
+    For a CRPS generator checkpoint (model_type == "crps_generator") the
+    returned schedule is None; draw members with model.sample(cond, M).
+    """
     device = device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-    path = path or (CHECKPOINTS / "ddpm_best_large.pt")
+    path = path or (CHECKPOINTS / "ddpm_best_build2025.pt")   # primary paper model
     ckpt = torch.load(path, map_location=device, weights_only=False)
+    if ckpt.get("model_type") == "crps_generator":
+        model = CRPSGenerator(
+            target_dim=int(ckpt["target_dim"]),
+            cond_dim=int(ckpt["cond_dim"]),
+            noise_dim=int(ckpt["noise_dim"]),
+            hidden=tuple(ckpt["hidden_dims"]),
+            dropout=float(ckpt["dropout"]),
+            use_beta_silu=bool(ckpt["use_beta_silu"]),
+            linear_skip=bool(ckpt.get("linear_skip", False)),
+        ).to(device)
+        model.load_state_dict(ckpt["model"])
+        model.eval()
+        return model, None, ckpt, device
 
     model = MLPDenoiser(
         target_dim=int(ckpt["target_dim"]),
@@ -62,5 +79,7 @@ def sample_ensemble(condition: np.ndarray, n_members: int = 100,
     cond = torch.from_numpy(condition.astype(np.float32)).to(device)
     cond = cond.unsqueeze(0).expand(n_members, -1)
 
+    if schedule is None:
+        return model.sample(cond[:1], n_members)[0].cpu().numpy()
     pcs = schedule.sample(model, cond, target_dim)
     return pcs.cpu().numpy()

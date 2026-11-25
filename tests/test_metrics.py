@@ -233,3 +233,27 @@ class TestPatternCorrelation:
 
         r_intersection = pattern_correlation(m_abcd, m_abc)
         assert abs(r_intersection - r_expected) < 1e-10
+
+
+class TestJointSkill:
+
+    def test_ratio_of_means_not_mean_of_ratios(self):
+        from src.evaluation.metrics import ratio_of_means_skill
+        # cases (model, clim) = (1, 1) and (3, 4): ratio of means 1 − 4/5 = 0.2,
+        # whereas the mean of per-case skills would be (0 + 0.25)/2 = 0.125
+        s = np.array([[1.0, 0, 1.0, 0], [3.0, 0, 4.0, 0]])
+        sk = ratio_of_means_skill(s)
+        assert sk[0] == pytest.approx(0.2)
+        assert sk[2] == pytest.approx(0.0)
+
+    def test_summary_point_and_ci(self):
+        from src.evaluation.metrics import joint_skill_summary
+        rng = np.random.default_rng(0)
+        N, L = 60, 3
+        clim = rng.uniform(1, 2, (N, L))
+        s = np.stack([0.8 * clim, 0.9 * clim, clim, 1.1 * clim], axis=-1)
+        out = joint_skill_summary(s, block_size=3, n_boot=200, rng=rng)
+        np.testing.assert_allclose(out["skill"][:, 0], 0.2)
+        np.testing.assert_allclose(out["delta"], [0.1, 0.1, 0.0], atol=1e-12)
+        np.testing.assert_allclose(out["skill_lo"][:, 0], 0.2)   # exact proportionality → no spread
+        assert out["skill_lo"].shape == (L, 4) and out["delta_hi"].shape == (3,)

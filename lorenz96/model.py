@@ -129,13 +129,32 @@ class ConvScoreNet(nn.Module):
 # DDPM  (identical logic to L63 version; operates on (B, N) tensors)
 # ---------------------------------------------------------------------------
 
+def make_betas(T: int, schedule: str = "linear") -> torch.Tensor:
+    """Noise schedule.  'linear' is the default used for all paper models;
+    'cosine' (Nichol & Dhariwal 2021) is an ablation option."""
+    if schedule == "linear":
+        return torch.linspace(BETA_START, BETA_END, T)
+    if schedule == "cosine":
+        s = 0.008
+        t = torch.linspace(0, T, T + 1, dtype=torch.float64) / T
+        f = torch.cos((t + s) / (1 + s) * math.pi / 2) ** 2
+        ab = f / f[0]
+        return (1 - ab[1:] / ab[:-1]).clamp(max=0.999).float()
+    raise ValueError(f"unknown beta schedule {schedule!r}")
+
+
 class DDPM(nn.Module):
-    def __init__(self, score_net: ConvScoreNet, T: int = T_DIFF):
+    def __init__(self, score_net: ConvScoreNet, T: int = T_DIFF, beta_schedule: str = "linear"):
         super().__init__()
         self.score_net = score_net
         self.T = T
+        # The cosine schedule ends at alpha_bar_T ≈ 2e-9, so the first DDIM step
+        # amplifies eps error by 1/sqrt(alpha_bar_T) ≈ 2e4 (linear: ≈ 160).
+        # Clip the x0 estimate (normalised L96 states lie within ≈ ±3 SD) for
+        # cosine only; linear-schedule (paper) models sample exactly as before.
+        self.clip_x0 = 5.0 if beta_schedule == "cosine" else None
 
-        betas     = torch.linspace(BETA_START, BETA_END, T)
+        betas     = make_betas(T, beta_schedule)
         alphas    = 1.0 - betas
         alpha_bar = torch.cumprod(alphas, dim=0)
 
@@ -199,6 +218,9 @@ class DDPM(nn.Module):
 
             # DDIM update: x0 estimate → re-noise to t_prev level
             x0_pred = (x - (1 - ab_t).sqrt() * eps_pred) / ab_t.sqrt()
+            if self.clip_x0 is not None:
+                x0_pred = x0_pred.clamp(-self.clip_x0, self.clip_x0)
+                eps_pred = (x - ab_t.sqrt() * x0_pred) / (1 - ab_t).sqrt()
             x = ab_prev.sqrt() * x0_pred + (1 - ab_prev).sqrt() * eps_pred
 
         return x.view(B, n_samples, state_dim)   # (B, M, N)
@@ -243,3 +265,41 @@ class ConvDeterministicNet(nn.Module):
         for block in self.blocks:
             h = block(h)
         return self.out_proj(h).squeeze(1)   # (B, N)
+
+
+class ConvGenerativeNet(nn.Module):
+    """Noise-conditioned generator: (cond, z) → ensemble member.
+
+    Same trunk as ConvDeterministicNet, with a full-field noise channel
+    z ~ N(0, I) concatenated to the conditioning state.  Each member is an
+    independent draw of z.  Trained by the CRPS (see train_crps.py) rather
+    than score matching or MSE.
+    """
+    def __init__(
+        self,
+        hidden_ch:   int = HIDDEN_CH,
+        n_res:       int = N_RES,
+        kernel_size: int = KERNEL,
+        noise_ch:    int = 1,
+        state_dim:   int = N,
+    ):
+        super().__init__()
+        self.noise_ch  = noise_ch
+        self.state_dim = state_dim
+        self.in_proj  = CircularConv1d(1 + noise_ch, hidden_ch, kernel_size)
+        self.blocks   = nn.ModuleList(
+            [DetResBlock(hidden_ch, kernel_size) for _ in range(n_res)]
+        )
+        self.out_proj = nn.Sequential(nn.SiLU(), nn.Conv1d(hidden_ch, 1, 1))
+
+    def sample_latent(self, n: int, device) -> torch.Tensor:
+        """Draw noise for n members: (n, noise_ch, N)."""
+        return torch.randn(n, self.noise_ch, self.state_dim, device=device)
+
+    def forward(self, cond: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+        # cond: (B, N);  z: (B, noise_ch, N)
+        x = torch.cat([cond.unsqueeze(1), z], dim=1)   # (B, 1+noise_ch, N)
+        h = self.in_proj(x)
+        for block in self.blocks:
+            h = block(h)
+        return self.out_proj(h).squeeze(1)             # (B, N)

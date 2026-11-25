@@ -34,7 +34,7 @@ from lorenz96.dataset import load_trajectory
 from lorenz96.model   import DDPM, ConvScoreNet
 
 CKPT_DIR   = Path(__file__).parent / "checkpoints"
-DATA_PATH  = "lorenz96/data/l96_trajectory.npz"
+DATA_PATH  = "lorenz96/l96_trajectory.npz"
 OUT_DIR    = Path("figures/supplement")
 
 LEAD_VALUES   = [20, 40, 60]

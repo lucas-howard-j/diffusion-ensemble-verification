@@ -14,7 +14,7 @@ sigma_model controls per-step model error growth.
 Both are in physical units.  Defaults are chosen so ensemble spread is
 comparable to short-lead DDPM spread.
 
-Saves dyn_results.npz in the same layout as mvn_results.npz so figure4.py
+Saves dyn_results.npz in the same layout as mvn_results.npz so scripts/figure_dyn_sweep.py
 can overlay a dynamical baseline line.
 
 Usage:
@@ -31,7 +31,7 @@ from lorenz96.config  import N, F, DT, TEST_START, TRAIN_END
 from lorenz96.dataset import load_trajectory
 
 OUT_PATH  = os.path.join(os.path.dirname(__file__), "dyn_results.npz")
-DATA_PATH = "lorenz96/data/l96_trajectory.npz"
+DATA_PATH = "lorenz96/l96_trajectory.npz"
 N_EVAL    = 200    # match mvn_eval.py
 N_ENS     = 20     # match DDPM sweep ensemble size
 N_BOOT    = 1000

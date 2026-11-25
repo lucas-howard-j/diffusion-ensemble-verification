@@ -20,20 +20,31 @@ paper_context.md
 data/raw/era5/
 data/raw/glorys/
 data/raw/glorys_nino34/
+data/raw/glorys_nino34
+data/raw/era5
 
-# Large processed data (regenerated via pipeline; see README for Zenodo link)
+# Large processed data (regenerated via the download/processing pipeline; see README)
 data/processed/*.nc
 data/processed/eof_ssh.npz
 data/processed/eof_sst.npz
-# Included: eof_wind.npz (9.8MB), nao_weekly.csv, enso_nino34_weekly.csv
+# Included: eof_ssh_pcs.npz / eof_sst_pcs.npz (PC-only copies, enough to train and
+# evaluate), gauge_ssh_interp.npy, eof_wind.npz, nao_weekly.csv, enso_nino34_weekly.csv
 
 # Cached results (reproducible; e.g. vs_per_pair.py --cached)
 results/*.npz
+!results/figure3_scores_test.npz
+!results/figure3_scores_val.npz
+# Figure 3b per-pair VS scores (released points)
+!results/vs_per_pair_test.npz
 
 # L96/L63 runtime data and checkpoints
 lorenz96/data/
 lorenz96/l96_trajectory.npz
-lorenz96/checkpoints/
+# Experimental L96 checkpoints are ignored; the three paper emulators (Figs 5-6) ship
+lorenz96/checkpoints/*
+!lorenz96/checkpoints/det_emulator.pt
+!lorenz96/checkpoints/crps_emulator.pt
+!lorenz96/checkpoints/es_emulator.pt
 lorenz63/data/
 lorenz63/checkpoints/
 lorenz63/sweep_T100/
@@ -57,6 +68,24 @@ lorenz63/sweep/*.png
 
 # Training logs (verbose; logs/beta_history.csv is included)
 logs/*.log
+# ...except the final SSH DDPM run, which figure_training.py (Fig S1a) reads
+!logs/train_build2025.log
+# Scratch logs from tuning runs not used by any figure
+logs/ablation/_sweep.out
+logs/crps_m8_sweep/
+logs/es_m8/
+logs/l96_es/
+logs/rngfix/
+logs/figs/
 
 # OOD diagnostic scripts (not publication-ready; add back when ready)
 scripts/ood_lead_diagnostic.py
+
+# Superseded April 2026 data build (see its README.txt)
+data/processed_april2026/
+
+# SSH DDPM ablation checkpoints (scripts/run_ablation.sh)
+checkpoints/ablation/
+
+# L96 DDPM ablation checkpoints (scripts/run_l96_ablation.sh)
+checkpoints/l96_ablation/

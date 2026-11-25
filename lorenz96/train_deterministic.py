@@ -6,6 +6,11 @@ as ConvScoreNet but without timestep embedding (direct cond → target map).
 
 Usage:
     python -m lorenz96.train_deterministic [--data PATH] [--n_train N] [--lead L] [--out CKPT]
+        [--seed S] [--hidden-ch C] [--n-res R] [--kernel K] [--lr LR]
+        [--batch-size B] [--max-epochs E]
+
+The architecture/optimiser flags default to lorenz96/config.py and exist for
+the one-at-a-time ablation (scripts/run_l96_ablation.sh).
 """
 
 import argparse
@@ -28,12 +33,22 @@ from lorenz96.model import ConvDeterministicNet
 
 
 def train_deterministic(
-    data_path:  str = "lorenz96/data/l96_trajectory.npz",
+    data_path:  str = "lorenz96/l96_trajectory.npz",
     n_train:    int | None = None,
     lead_steps: int = LEAD_STEPS,
     out_path:   str = "lorenz96/checkpoints/det_emulator.pt",
     device:     str | None = None,
+    seed:       int | None = None,
+    hidden_ch:  int = HIDDEN_CH,
+    n_res:      int = N_RES,
+    kernel:     int = KERNEL,
+    lr:         float = LR,
+    batch_size: int = BATCH_SIZE,
+    max_epochs: int = MAX_EPOCHS,
 ):
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
     if device is None:
         device = (
             "cuda" if torch.cuda.is_available() else
@@ -66,17 +81,17 @@ def train_deterministic(
     print(f"n_train={n_train:,}  n_val={len(val_ds)}  "
           f"lead={lead_steps} steps ({lead_steps*dt:.2f} TU)  device={device}")
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,  num_workers=0)
-    val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=0)
+    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=0)
 
-    model = ConvDeterministicNet(hidden_ch=HIDDEN_CH, n_res=N_RES, kernel_size=KERNEL).to(device)
+    model = ConvDeterministicNet(hidden_ch=hidden_ch, n_res=n_res, kernel_size=kernel).to(device)
     print(f"Model params: {sum(p.numel() for p in model.parameters()):,}")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     best_val, patience_ct, best_state = float("inf"), 0, None
     t0 = time.perf_counter()
 
-    for epoch in range(1, MAX_EPOCHS + 1):
+    for epoch in range(1, max_epochs + 1):
         model.train()
         train_loss = 0.0
         for cond, target in train_loader:
@@ -118,7 +133,10 @@ def train_deterministic(
         "n_train":     n_train,
         "lead_steps":  lead_steps,
         "val_loss":    best_val,
-        "config": json.dumps({"hidden_ch": HIDDEN_CH, "n_res": N_RES, "kernel": KERNEL}),
+        "epochs":      epoch,
+        "seed":        seed,
+        "config": json.dumps({"hidden_ch": hidden_ch, "n_res": n_res, "kernel": kernel,
+                              "lr": lr, "batch_size": batch_size}),
     }, out_path)
     print(f"Saved → {out_path}  (best val={best_val:.5f})")
     return model, train_ds.mu, train_ds.sigma
@@ -126,14 +144,23 @@ def train_deterministic(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data",    default="lorenz96/data/l96_trajectory.npz")
+    parser.add_argument("--data",    default="lorenz96/l96_trajectory.npz")
     parser.add_argument("--n_train", type=int,   default=None)
     parser.add_argument("--lead",    type=int,   default=LEAD_STEPS)
     parser.add_argument("--out",     default="lorenz96/checkpoints/det_emulator.pt")
     parser.add_argument("--device",  default=None)
+    parser.add_argument("--seed",       type=int,   default=None)
+    parser.add_argument("--hidden-ch",  type=int,   default=HIDDEN_CH)
+    parser.add_argument("--n-res",      type=int,   default=N_RES)
+    parser.add_argument("--kernel",     type=int,   default=KERNEL)
+    parser.add_argument("--lr",         type=float, default=LR)
+    parser.add_argument("--batch-size", type=int,   default=BATCH_SIZE)
+    parser.add_argument("--max-epochs", type=int,   default=MAX_EPOCHS)
     args = parser.parse_args()
 
-    train_deterministic(args.data, args.n_train, args.lead, args.out, args.device)
+    train_deterministic(args.data, args.n_train, args.lead, args.out, args.device,
+                        seed=args.seed, hidden_ch=args.hidden_ch, n_res=args.n_res, kernel=args.kernel,
+        lr=args.lr, batch_size=args.batch_size, max_epochs=args.max_epochs)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+Sampling DDPM: 2000 × 500 members, lead=20, steps=200  (device=mps) ...
+  IC 20/2000  (7s)
+  IC 220/2000  (77s)
+  IC 420/2000  (156s)
+  IC 620/2000  (232s)
+  IC 820/2000  (305s)
+  IC 1020/2000  (377s)
+  IC 1220/2000  (452s)
+  IC 1420/2000  (524s)
+  IC 1620/2000  (600s)
+  IC 1820/2000  (675s)
+  Done.
+CRPS skill=+0.4352  VS skill=+0.3340  VS/CRPS=0.7676  spread=0.6056
+Bootstrapping CIs ...
+Saved → lorenz96/ensemble_results/ddpm_results.npz

@@ -6,7 +6,8 @@ u10 and v10 are treated jointly by stacking them into a single EOF analysis
 the two components and keeps the number of PC time series manageable.
 
 Run as a script:
-    python -m src.eof.compute_wind_eofs
+    python -m src.eof.compute_wind_eofs              # from raw ERA5
+    python -m src.eof.compute_wind_eofs --from-anom  # from saved wind_anom_weekly.nc
 
 Saves:
     data/processed/eof_wind.npz
@@ -77,6 +78,24 @@ def compute_wind_eofs(save: bool = True) -> dict:
         with ProgressBar():
             ds_out.to_netcdf(str(WIND_ANOM_WEEKLY), encoding=enc, compute=True)
 
+    return _joint_eofs(u_dt, v_dt, lats, lons, save)
+
+
+def eofs_from_saved_anomalies(save: bool = True) -> dict:
+    """Recompute the joint EOFs from data/processed/wind_anom_weekly.nc.
+
+    Used when the raw ERA5 files are unavailable: the saved anomalies are
+    already deseasonalised and detrended over TRAIN_YEARS.
+    """
+    ds = xr.open_dataset(str(WIND_ANOM_WEEKLY))
+    u_dt, v_dt = ds["u10_anom"], ds["v10_anom"]
+    lat_dim = [d for d in u_dt.dims if "lat" in d][0]
+    lon_dim = [d for d in u_dt.dims if "lon" in d][0]
+    return _joint_eofs(u_dt, v_dt, u_dt[lat_dim].values, u_dt[lon_dim].values, save)
+
+
+def _joint_eofs(u_dt: xr.DataArray, v_dt: xr.DataArray, lats: np.ndarray,
+                lons: np.ndarray, save: bool) -> dict:
     w1d = area_weights(lats)
 
     # Apply area weighting, flatten, and concatenate u+v for joint EOF
@@ -135,4 +154,8 @@ def load_wind_eofs() -> dict:
 
 
 if __name__ == "__main__":
-    compute_wind_eofs(save=True)
+    import sys
+    if "--from-anom" in sys.argv:
+        eofs_from_saved_anomalies(save=True)
+    else:
+        compute_wind_eofs(save=True)

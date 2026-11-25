@@ -27,7 +27,7 @@ from lorenz96.model import ConvDeterministicNet
 
 def run_det_ensemble(
     ckpt_path:  str   = "lorenz96/checkpoints/det_emulator.pt",
-    data_path:  str   = "lorenz96/data/l96_trajectory.npz",
+    data_path:  str   = "lorenz96/l96_trajectory.npz",
     sigma_ic:   float = 0.01,
     n_eval:     int   = 2_000,
     n_ens:      int   = 500,
@@ -112,7 +112,8 @@ def run_det_ensemble(
     crps_ens  = crps_ensemble(target_norm, ens_norm).mean(0)
     crps_clim = crps_ensemble(target_norm, clim_ens_norm).mean(0)
     crps_node = 1 - crps_ens / crps_clim
-    crps_skill = float(crps_node.mean())
+    # Ratio of means over ICs and nodes (the statistic bootstrap_skill_ci resamples)
+    crps_skill = float(1 - crps_ens.mean() / crps_clim.mean())
 
     vs_ens  = variogram_score(target_norm, ens_norm)
     vs_clim = variogram_score(target_norm, clim_ens_norm)
@@ -141,7 +142,7 @@ def run_det_ensemble(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt",       default="lorenz96/checkpoints/det_emulator.pt")
-    parser.add_argument("--data",       default="lorenz96/data/l96_trajectory.npz")
+    parser.add_argument("--data",       default="lorenz96/l96_trajectory.npz")
     parser.add_argument("--sigma-ic",   type=float, default=0.01)
     parser.add_argument("--n-eval",     type=int, default=2_000)
     parser.add_argument("--n-ens",      type=int, default=500)

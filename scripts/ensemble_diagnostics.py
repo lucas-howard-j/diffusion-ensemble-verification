@@ -25,11 +25,11 @@ from src.config import LEAD_WEEKS, TIDE_GAUGES, TRAIN_YEARS
 from src.data.gauge_loader import load_gauges
 from src.model.dataset import SSHDiffusionDataset
 from src.model.sample import load_checkpoint
-from src.evaluation.metrics import block_bootstrap_ci
+from src.evaluation.metrics import joint_skill_summary
 from src.evaluation.scores import energy_score, variogram_score
 
 N_MEMBERS  = 500
-BLOCK_SIZE = 3     # weeks; matches ~2–3wk score decorrelation time (consistent with figure3.py)
+BLOCK_SIZE = 3     # weeks; matches ~2–3wk score decorrelation time (consistent with figure1.py)
 N_BOOT     = 1000  # bootstrap resamples
 CI_ALPHA   = 0.05  # 95 % CI
 OUT_DIR = Path("figures")
@@ -370,7 +370,7 @@ def main(ckpt_path: Path | None = None, split: str = "val") -> None:
     print("Saved figures/energy_score_permutation.pdf")
 
     # ── Figure 5: energy skill score vs lead ─────────────────────────────────
-    # Skill = 1 - ES / ES_clim, computed per init then averaged
+    # Skill = 1 − mean(ES) / mean(ES_clim) over inits (ratio of means, as figure1.py)
     skill_lines = {
         "DDPM":             {"col": 0, "color": "steelblue",  "ls": "-",  "marker": "o"},
         "DDPM shuffled":    {"col": 1, "color": "steelblue",  "ls": "--", "marker": "s"},
@@ -378,20 +378,13 @@ def main(ckpt_path: Path | None = None, split: str = "val") -> None:
     }
 
     rng_boot = np.random.default_rng(42)
+    # (N, n_leads, 4): orig, shuf, clim, clim_shuf; np.stack fails if leads differ in N
+    es_sum = joint_skill_summary(np.stack([np.array(es_records[l]) for l in leads], axis=1),
+                                 BLOCK_SIZE, N_BOOT, CI_ALPHA, rng_boot)
     fig5, ax5 = plt.subplots(figsize=(5.5, 4))
     for label, cfg in skill_lines.items():
-        skill_all  = []   # (n_leads, N) — per-init skill at each lead
-        skill_mean = []
-        for l in leads:
-            arr    = np.array(es_records[l])   # (N, 4)
-            es_ref = arr[:, 2]                 # ES_clim per init
-            skill  = 1 - arr[:, cfg["col"]] / es_ref
-            skill_all.append(skill)
-            skill_mean.append(skill.mean())
-        # skill_all transposed: (N, n_leads) for block_bootstrap_ci (axis-0 = time)
-        skill_ts = np.stack(skill_all, axis=1)          # (N, n_leads)
-        lo, hi   = block_bootstrap_ci(skill_ts, BLOCK_SIZE, N_BOOT, CI_ALPHA, rng_boot)
-        skill_mean = np.array(skill_mean)
+        skill_mean = es_sum["skill"][:, cfg["col"]]
+        lo, hi = es_sum["skill_lo"][:, cfg["col"]], es_sum["skill_hi"][:, cfg["col"]]
         ax5.plot(leads, skill_mean, color=cfg["color"], ls=cfg["ls"],
                  marker=cfg["marker"], ms=6, lw=1.8, label=label)
         ax5.fill_between(leads, lo, hi, color=cfg["color"], alpha=0.18)
@@ -411,37 +404,23 @@ def main(ckpt_path: Path | None = None, split: str = "val") -> None:
 
 
     # ── Variogram score skill vs lead ─────────────────────────────────────────
-    print("\nVariogram score skill (1 − VS / VS_clim):  p=0.5, equal weights")
+    print("\nVariogram score skill (1 − mean VS / mean VS_clim):  p=0.5, equal weights")
     print(f"{'Lead':>6}  {'DDPM':>8}  {'DDPM_shuf':>10}  {'GLORYS_shuf':>12}")
     vs_skill_lines = {
         "DDPM":            {"col": 0, "color": "steelblue",  "ls": "-",  "marker": "o"},
         "DDPM shuffled":   {"col": 1, "color": "steelblue",  "ls": "--", "marker": "s"},
         "GLORYS shuffled": {"col": 3, "color": "0.45",       "ls": "--", "marker": "^"},
     }
-    vs_skill_data: dict[str, list[float]] = {k: [] for k in vs_skill_lines}
-
-    for l in leads:
-        arr = np.array(vs_records[l])          # (N, 4): orig, shuf, clim, clim_shuf
-        vs_ref = arr[:, 2]                     # VS_clim per init
-        row_vals = {}
-        for label, cfg in vs_skill_lines.items():
-            skill = 1 - arr[:, cfg["col"]] / vs_ref
-            vs_skill_data[label].append(skill.mean())
-            row_vals[label] = skill.mean()
-        print(f"  {l:>2}wk  {row_vals['DDPM']:>+.4f}  "
-              f"{row_vals['DDPM shuffled']:>+.4f}      "
-              f"{row_vals['GLORYS shuffled']:>+.4f}")
+    vs_sum = joint_skill_summary(np.stack([np.array(vs_records[l]) for l in leads], axis=1),
+                                 BLOCK_SIZE, N_BOOT, CI_ALPHA, rng_boot)
+    for j, l in enumerate(leads):
+        sk = vs_sum["skill"][j]
+        print(f"  {l:>2}wk  {sk[0]:>+.4f}  {sk[1]:>+.4f}      {sk[3]:>+.4f}")
 
     fig6, ax6 = plt.subplots(figsize=(5.5, 4))
     for label, cfg in vs_skill_lines.items():
-        sm = np.array(vs_skill_data[label])
-        # Per-init skill time series: (N, n_leads)
-        vs_ts = np.stack(
-            [1 - np.array(vs_records[l])[:, cfg["col"]] / np.array(vs_records[l])[:, 2]
-             for l in leads],
-            axis=1,
-        )
-        lo, hi = block_bootstrap_ci(vs_ts, BLOCK_SIZE, N_BOOT, CI_ALPHA, rng_boot)
+        sm = vs_sum["skill"][:, cfg["col"]]
+        lo, hi = vs_sum["skill_lo"][:, cfg["col"]], vs_sum["skill_hi"][:, cfg["col"]]
         ax6.plot(leads, sm, color=cfg["color"], ls=cfg["ls"],
                  marker=cfg["marker"], ms=6, lw=1.8, label=label)
         ax6.fill_between(leads, lo, hi, color=cfg["color"], alpha=0.18)

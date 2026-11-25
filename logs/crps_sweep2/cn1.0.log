@@ -1,0 +1,14 @@
+Train pairs: 5350  |  Val pairs: 546  |  M=2  seed=0
+Epoch    0  train=5.4833  val=4.9075  lr=1.00e-04  (2s)
+Epoch    1  train=4.7030  val=4.7734  lr=1.00e-04  (3s)
+Epoch    2  train=4.2214  val=4.8098  lr=1.00e-04  (5s)
+Epoch    3  train=3.9118  val=4.8225  lr=1.00e-04  (7s)
+Epoch    4  train=3.6569  val=4.8638  lr=1.00e-04  (8s)
+Epoch   10  train=2.3559  val=5.1032  lr=1.00e-04  (18s)
+Epoch   20  train=0.8797  val=5.8635  lr=1.00e-04  (34s)
+Epoch   30  train=0.3326  val=6.0710  lr=5.00e-05  (50s)
+Epoch   40  train=0.2065  val=6.2201  lr=5.00e-05  (65s)
+Epoch   50  train=0.0461  val=6.2561  lr=2.50e-05  (81s)
+Epoch   60  train=0.0248  val=6.1664  lr=2.50e-05  (95s)
+Early stopping at epoch 61
+Best val fair CRPS: 4.7734 (epoch 1)  →  s2_cn1.0.pt

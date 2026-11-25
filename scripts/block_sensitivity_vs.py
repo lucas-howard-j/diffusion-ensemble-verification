@@ -3,8 +3,10 @@ Block-length sensitivity of VS Δ−Δ_clim significance.
 
 Loads the cached test-split scores from results/figure3_scores_test.npz and
 re-runs the pooled block-bootstrap for VS Δ−Δ_clim across a range of block
-sizes.  Answers the reviewer concern: does the keystone CI lower bound stay
-positive when block size is varied from conservative to aggressive?
+sizes, to check whether the CI lower bound stays positive when the block size
+is varied from conservative to aggressive.
+
+All skills are ratio of means, 1 − mean(VS)/mean(VS_clim), as in figure1.py / figure2.py.
 
 VS Δ−Δ_clim = (VS_skill_ddpm − VS_skill_ddpm_shuf) − (VS_skill_clim − VS_skill_clim_shuf)
             = excess joint-structure benefit of DDPM relative to climatological draw
@@ -29,7 +31,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from src.evaluation.metrics import block_bootstrap_ci
+from src.evaluation.metrics import joint_skill_summary
 
 N_BOOT    = 2000          # more resamples for stable CI tails
 CI_ALPHA  = 0.05
@@ -38,57 +40,28 @@ OUT_DIR   = Path("figures/supplement")
 OUT_DIR.mkdir(exist_ok=True, parents=True)
 
 
-def _vs_delta_excess(vs_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Compute per-init VS Δ−Δ_clim pooled across leads.
+def _valid_vs(vs_arr: np.ndarray) -> np.ndarray:
+    """Inits with all VS columns finite.  vs_arr: (N, n_leads, 4) [orig, shuf, clim, clim_shuf]."""
+    return vs_arr[np.all(np.isfinite(vs_arr), axis=(1, 2))]
 
-    vs_arr: (N, n_leads, 4)  columns: [orig, shuf, clim, clim_shuf]
-    Returns:
-        delta_excess  (N, n_leads) — per-init, per-lead excess joint contribution
-        pooled        (N,)         — lead-mean of delta_excess (the stat we bootstrap)
+
+def _excess_contributions(a: np.ndarray) -> np.ndarray:
+    """Per-init contributions to the ratio-of-means VS Δ−Δ_clim, lead-mean.  → (N,)
+
+    With skills 1 − mean(S_col)/mean(S_clim), the excess at each lead is
+    mean_i[(S_shuf − S) − (S_clim_shuf − S_clim)]_i / mean(S_clim), so dividing each
+    init's numerator by the (fixed) mean climatology score gives a series whose
+    mean is exactly the excess.  Used only for the autocorrelation diagnostic.
     """
-    ok = np.all(np.isfinite(vs_arr), axis=(1, 2))
-    a   = vs_arr[ok]
-    ref = a[:, :, 2:3]                              # VS_clim reference
-    per_init = 1.0 - a / (ref + 1e-12)              # skill (N, n_leads, 4)
-    delta_ddpm   = per_init[:, :, 0] - per_init[:, :, 1]   # (N, n_leads)
-    delta_clim   = per_init[:, :, 2] - per_init[:, :, 3]
-    delta_excess = delta_ddpm - delta_clim           # (N, n_leads)
-    pooled = delta_excess.mean(axis=1)               # (N,) — lead-mean
-    return delta_excess, pooled
-
-
-def _per_lead_vs_skill(vs_arr: np.ndarray) -> np.ndarray:
-    """DDPM VS skill per init per lead: (N, n_leads)."""
-    ok = np.all(np.isfinite(vs_arr), axis=(1, 2))
-    a   = vs_arr[ok]
-    ref = a[:, :, 2]   # VS_clim, shape (N, n_leads)
-    return 1.0 - a[:, :, 0] / (ref + 1e-12)
-
-
-def _block_bootstrap_mean_ci(
-    x: np.ndarray,
-    block_size: int,
-    rng: np.random.Generator,
-) -> tuple[float, float]:
-    """Moving-block bootstrap 95 % CI on the mean of 1-D array x."""
-    N = len(x)
-    nb = int(np.ceil(N / block_size))
-    ms = max(0, N - block_size)
-    boot = np.empty(N_BOOT)
-    for b in range(N_BOOT):
-        starts = rng.integers(0, ms + 1, size=nb)
-        idx = np.concatenate([np.arange(s, s + block_size) for s in starts])[:N]
-        boot[b] = x[idx].mean()
-    lo = float(np.percentile(boot, 100 * CI_ALPHA / 2))
-    hi = float(np.percentile(boot, 100 * (1 - CI_ALPHA / 2)))
-    return lo, hi
+    num = (a[:, :, 1] - a[:, :, 0]) - (a[:, :, 3] - a[:, :, 2])   # (N, n_leads)
+    return (num / a[:, :, 2].mean(0)).mean(axis=1)
 
 
 def main(split: str = "test") -> None:
     cache = Path("results") / f"figure3_scores_{split}.npz"
     if not cache.exists():
         raise FileNotFoundError(
-            f"{cache} not found — run figure3.py first to populate the cache."
+            f"{cache} not found — run scripts/figure1.py first to populate the cache."
         )
 
     scores = np.load(cache, allow_pickle=True)
@@ -98,15 +71,15 @@ def main(split: str = "test") -> None:
     leads  = list(scores["leads"])
     n_leads = len(leads)
 
-    delta_excess, pooled = _vs_delta_excess(vs_arr)
-    per_lead_skill = _per_lead_vs_skill(vs_arr)   # (N, n_leads)
-    N = len(pooled)
+    vs_ok = _valid_vs(vs_arr)                     # (N, n_leads, 4)
+    pooled = _excess_contributions(vs_ok)         # (N,) — for the ACF only
+    N = len(vs_ok)
     print(f"Split: {split}  |  valid inits: {N}  |  leads: {leads}")
-    print(f"\nVS Δ−Δ_clim point estimate (lead-mean): {pooled.mean():+.4f}")
+    print(f"\nVS Δ−Δ_clim point estimate (ratio of means, lead-mean): {pooled.mean():+.4f}")
 
     rng = np.random.default_rng(42)
 
-    # ── CRPS skill — ratio-of-means bootstrap (matches figure3.py) ──────────
+    # ── CRPS skill — ratio-of-means bootstrap (matches figure1.py) ──────────
     # Point estimate: 1 - mean_N(crps_ddpm) / mean_N(crps_ref), per lead, station-mean
     ok_crps = np.all(np.isfinite(crps_ddpm) & np.isfinite(crps_ref), axis=(1, 2))
     cd_all = crps_ddpm[ok_crps]   # (N, n_leads, n_st)
@@ -158,25 +131,22 @@ def main(split: str = "test") -> None:
                          for m, lo, hi in crps_per_lead_results[bs])
         print(f"  {bs:>2} wk  {vals}")
 
-    # ── Sweep: pooled VS Δ−Δ_clim ────────────────────────────────────────────
+    # ── Sweep: pooled VS Δ−Δ_clim and per-lead VS skill (ratio of means, as figure1.py) ──
     print(f"\n{'Block':>6}  {'Mean':>8}  {'lo':>8}  {'hi':>8}  {'sig?':>5}")
     results = {}
-    for bs in BLOCK_SIZES:
-        lo, hi = _block_bootstrap_mean_ci(pooled, bs, rng)
-        sig = "yes *" if lo > 0 else ("neg *" if hi < 0 else "no")
-        print(f"  {bs:>2} wk   {pooled.mean():>+.4f}  {lo:>+.4f}  {hi:>+.4f}  {sig}")
-        results[bs] = (pooled.mean(), lo, hi)
-
-    # ── Per-lead VS skill CI sweep ────────────────────────────────────────────
-    print(f"\n{'Block':>6}  " + "  ".join(f"{l:>2}wk [lo, hi]" for l in leads))
     per_lead_results: dict[int, list[tuple[float, float, float]]] = {}
     for bs in BLOCK_SIZES:
-        row = []
-        for li in range(n_leads):
-            skill_li = per_lead_skill[:, li]
-            lo, hi = _block_bootstrap_mean_ci(skill_li, bs, rng)
-            row.append((skill_li.mean(), lo, hi))
-        per_lead_results[bs] = row
+        out = joint_skill_summary(vs_ok, bs, N_BOOT, CI_ALPHA, rng)
+        m, lo, hi = out["delta"][2], out["delta_lo"][2], out["delta_hi"][2]
+        sig = "yes *" if lo > 0 else ("neg *" if hi < 0 else "no")
+        print(f"  {bs:>2} wk   {m:>+.4f}  {lo:>+.4f}  {hi:>+.4f}  {sig}")
+        results[bs] = (m, lo, hi)
+        per_lead_results[bs] = list(zip(out["skill"][:, 0], out["skill_lo"][:, 0],
+                                        out["skill_hi"][:, 0]))
+
+    print(f"\n{'Block':>6}  " + "  ".join(f"{l:>2}wk [lo, hi]" for l in leads))
+    for bs in BLOCK_SIZES:
+        row = per_lead_results[bs]
         vals = "  ".join(f"{m:>+.3f}[{lo:>+.3f},{hi:>+.3f}]"
                          for m, lo, hi in row)
         print(f"  {bs:>2} wk  {vals}")

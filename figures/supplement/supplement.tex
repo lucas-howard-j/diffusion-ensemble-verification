@@ -1,0 +1,66 @@
+% Supplementary material for "Do AI Forecast Ensembles Sample the Correct
+% Conditional Distribution?" (Howard & Barnes).  Contains Figure S1 and Table S1.
+%
+% Build (from this directory):  pdflatex supplement.tex
+% Inputs: figure_training.pdf (scripts/figure_training.py),
+%         table_model_config.tex
+
+\documentclass[11pt]{article}
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{adjustbox}
+\usepackage{amsmath}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[font=small,labelfont=bf]{caption}
+
+\renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\thetable}{S\arabic{table}}
+
+\title{Supplementary Material for\\
+\emph{Do AI Forecast Ensembles Sample the Correct Conditional Distribution?}}
+\author{Lucas J.\ Howard and Elizabeth A.\ Barnes\\[2pt]
+\small Boston University, Faculty of Computing and Data Sciences}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{Contents:} Figure S1, Table S1.
+
+\section*{Introduction}
+
+This supplement gives the training diagnostics and hyperparameter tuning for
+the SSH diffusion model (Figure S1) and the architecture and training
+hyperparameters of every model in the paper (Table S1).
+
+The SSH DDPM is sampled with the full reverse diffusion process ($T = 1000$
+steps). The Lorenz-96 DDPM is sampled with DDIM using 200 of its 1000 steps, to
+reduce computational cost. All Lorenz-96 ensembles have 500 members and are
+scored against a 500-member climatological reference. The training-volume sweep
+uses 500 test initializations, and the perturbation sweep and model comparison
+use 2{,}000. Within each experiment, every forecast is scored on the same
+initializations and climatological draws. 95\% confidence intervals come from
+1{,}000 bootstrap resamples of the test initializations.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{figure_training.pdf}
+  \caption{SSH DDPM training diagnostics.
+  (a)~Training and validation loss of the final model. Training stopped early at
+  epoch 395 (patience 150 epochs); the dashed line marks the best validation loss
+  (0.170), whose checkpoint is the model used in the paper.
+  (b)~Best validation loss for one-at-a-time variants of the final configuration,
+  each trained with three seeds. Dots are individual seeds, lines span their range
+  and labels give the seed mean; the shaded band is the final configuration's
+  seed range. The cosine $\beta$ schedule changes the scale of the
+  noise-prediction loss, so its value (0.314) is not comparable and is listed at
+  the panel edge rather than plotted.}
+  \label{fig:training}
+\end{figure}
+
+\input{table_model_config.tex}
+
+\end{document}

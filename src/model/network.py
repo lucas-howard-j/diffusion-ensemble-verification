@@ -82,3 +82,50 @@ class MLPDenoiser(nn.Module):
         te = self.time_embed(t)
         h = torch.cat([x_t, te, cond], dim=-1)
         return self.net(h)
+
+
+class CRPSGenerator(nn.Module):
+    """
+    Noise-conditioned MLP generator trained with the fair CRPS (no diffusion).
+
+    Input  : (condition, z) with z ~ N(0, I_noise_dim)
+    Output : one ensemble member of shape (target_dim,)
+
+    Same hidden widths / activation / LayerNorm as MLPDenoiser so the two
+    SSH emulators differ only in how the distribution is learned.  Dropout
+    defaults to 0: each training member is a separate forward pass, so
+    dropout masks would act as extra, train-only noise inside the CRPS
+    spread term and leave the eval-time ensemble under-dispersed.
+    """
+
+    def __init__(self,
+                 target_dim: int,
+                 cond_dim: int,
+                 noise_dim: int = 8,
+                 hidden: tuple[int, ...] = (256, 256, 128),
+                 dropout: float = 0.0,
+                 use_beta_silu: bool = False,
+                 linear_skip: bool = False):
+        super().__init__()
+        self.noise_dim = noise_dim
+        # optional linear map cond → output added to the MLP (a ridge-like mean path)
+        self.skip = nn.Linear(cond_dim, target_dim) if linear_skip else None
+        layers = []
+        prev = cond_dim + noise_dim
+        for h in hidden:
+            act = BetaSiLU() if use_beta_silu else nn.SiLU()
+            layers.extend([nn.Linear(prev, h), act, nn.LayerNorm(h), nn.Dropout(dropout)])
+            prev = h
+        layers.append(nn.Linear(prev, target_dim))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, cond: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+        out = self.net(torch.cat([cond, z], dim=-1))
+        return out if self.skip is None else out + self.skip(cond)
+
+    def sample(self, cond: torch.Tensor, n_members: int) -> torch.Tensor:
+        """cond (B, cond_dim) → members (B, n_members, target_dim)."""
+        B = cond.shape[0]
+        cond_rep = cond.repeat_interleave(n_members, dim=0)
+        z = torch.randn(B * n_members, self.noise_dim, device=cond.device)
+        return self.forward(cond_rep, z).view(B, n_members, -1)

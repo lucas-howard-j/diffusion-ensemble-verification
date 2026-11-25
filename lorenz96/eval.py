@@ -148,7 +148,7 @@ def variogram_score(
 
 def evaluate(
     ckpt_path:    str = "lorenz96/checkpoints/ddpm.pt",
-    data_path:    str = "lorenz96/data/l96_trajectory.npz",
+    data_path:    str = "lorenz96/l96_trajectory.npz",
     n_eval:       int = 2_000,
     n_ens:        int = 50,
     out_path:     str = "lorenz96/figures/skill_scores.pdf",
@@ -260,7 +260,7 @@ def evaluate(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt",   default="lorenz96/checkpoints/ddpm.pt")
-    parser.add_argument("--data",   default="lorenz96/data/l96_trajectory.npz")
+    parser.add_argument("--data",   default="lorenz96/l96_trajectory.npz")
     parser.add_argument("--n_eval", type=int, default=2_000)
     parser.add_argument("--n_ens",  type=int, default=50)
     parser.add_argument("--out",    default="lorenz96/figures/skill_scores.pdf")

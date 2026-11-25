@@ -2,7 +2,7 @@
 Supplementary figure: CRPS and VS skill vs IC perturbation size (σ_ic)
 for the dynamical ensemble baseline.
 
-Layout mirrors Figure 4:
+Layout mirrors Figure 4 (L96 training-volume sweep); main-text Figure 5 shows lead 20 only:
   Top row (a/b/c):    CRPS and VS skill vs σ_ic (log x-axis), 95% CIs shaded
   Bottom row (d/e/f): Violin distributions of CRPS−VS skill diff; dark = CI
                       excludes zero (significant), light grey = not significant

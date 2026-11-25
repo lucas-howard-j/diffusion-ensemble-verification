@@ -19,7 +19,7 @@ def project_onto_eofs(da: xr.DataArray, variable: str) -> np.ndarray:
     -------
     pcs : ndarray of shape (n_time, n_modes)
     """
-    eof_data = load_eofs(variable)
+    eof_data = load_eofs(variable, need_patterns=True)
     lats      = eof_data["lat"]
     ocean_idx = eof_data["ocean_mask"].ravel()
     eofs_modes = eof_data["eofs"]      # (n_modes, n_ocean_points)

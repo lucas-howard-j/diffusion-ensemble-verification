@@ -16,6 +16,10 @@ SSH_ANOM_WEEKLY  = PROC / "ssh_anom_weekly.nc"
 WIND_ANOM_WEEKLY = PROC / "wind_anom_weekly.nc"
 EOF_SST  = PROC / "eof_sst.npz"
 EOF_SSH  = PROC / "eof_ssh.npz"
+# PC-only copies of the SST/SSH EOF files (no spatial patterns; a few MB, tracked
+# in git). Enough to train and evaluate the SSH models; see load_eofs().
+EOF_SST_PCS = PROC / "eof_sst_pcs.npz"
+EOF_SSH_PCS = PROC / "eof_ssh_pcs.npz"
 EOF_WIND = PROC / "eof_wind.npz"
 NAO_WEEKLY  = PROC / "nao_weekly.csv"
 ENSO_WEEKLY = PROC / "enso_nino34_weekly.csv"
@@ -31,7 +35,7 @@ ERA5_DOMAIN = dict(lat_min=20.0, lat_max=80.0, lon_min=-90.0, lon_max=40.0)
 # ── Time periods ──────────────────────────────────────────────────────────────
 TRAIN_YEARS = range(1993, 2019)   # 1993–2018  (26 years)
 VAL_YEARS   = range(2019, 2022)   # 2019–2021  (3 years, ~131 inits)
-TEST_YEARS  = range(2022, 2025)   # 2022–2024  (3 years, ~131 inits)
+TEST_YEARS  = range(2022, 2026)   # 2022–2025  (4 years, 184 inits; data run to 2026-01-05)
 
 # ── EOF settings ──────────────────────────────────────────────────────────────
 N_EOFS_MAX          = 200
@@ -75,6 +79,21 @@ GRAD_CLIP    = 1.0
 EMA_DECAY    = 0.9999
 HIDDEN_DIMS  = (512, 512, 256)
 DROPOUT      = 0.10
+
+# ── CRPS-trained generator (src/model/train_crps.py) ──────────────────────────
+CRPS_N_MEMBERS = 2      # members per training sample (fair CRPS is unbiased at M=2)
+CRPS_NOISE_DIM = 8      # one noise dimension per gauge
+# Chosen by a seed-0 sweep on val fair CRPS (logs/crps_sweep*): the 512-wide
+# DDPM trunk memorises the ~1300 initial states within 1–2 epochs; this smaller
+# net with input noise was the most stable M=2 setting across seeds.
+CRPS_HIDDEN    = (256, 256)
+CRPS_LR        = 1e-4
+CRPS_DROPOUT   = 0.0
+CRPS_COND_NOISE = 0.5
+CRPS_EMA_DECAY = 0.0
+CRPS_LINEAR_SKIP = False
+CRPS_PATIENCE  = 60
+CRPS_SEEDS     = [0, 1, 2]
 
 # ── Tide gauge stations ───────────────────────────────────────────────────────
 TIDE_GAUGES = [

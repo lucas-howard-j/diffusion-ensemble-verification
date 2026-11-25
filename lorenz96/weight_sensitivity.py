@@ -42,10 +42,10 @@ from lorenz96.config import TEST_START, TRAIN_END
 from lorenz96.dataset import load_trajectory
 from lorenz96.model import DDPM, ConvScoreNet
 
-SAMPLE_STEPS = 200   # DDIM steps — matches lorenz96/sweep.py
+SAMPLE_STEPS = 200   # DDIM steps — matches lorenz96/sweep_eval.py
 OUT_DIR      = Path("lorenz96/weight_sensitivity")
 DEFAULT_CKPT = Path("lorenz96/sweep/checkpoints/ddpm_lead20_249000.pt")
-DEFAULT_DATA = Path("lorenz96/data/l96_trajectory.npz")
+DEFAULT_DATA = Path("lorenz96/l96_trajectory.npz")
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,12 @@
 """
 Supplementary figure: SSH DDPM training curves and architecture comparison.
 
-Panel (a): Train / val loss vs epoch for the final model (train_gauge_init2.log).
-Panel (b): Best validation loss across architecture / hyperparameter variants.
+Panel (a): Train / val loss vs epoch for the final model (train_build2025.log, the
+           2025 data build; checkpoint ddpm_best_build2025.pt used in Figs 1 and 2).
+Panel (b): Best validation loss for one-at-a-time variants of the final
+           configuration, 3 training seeds each (scripts/run_ablation.sh; logs in
+           logs/ablation/).  Dots are seeds, lines their range; the shaded band is the
+           final configuration's own seed range from the same sweep.
 
 Output:
     figures/supplement/figure_training.pdf
@@ -24,20 +28,26 @@ OUT_DIR = Path("figures/supplement")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Final model log (the run that produced the checkpoint used in the paper)
-FINAL_LOG = LOG_DIR / "train_gauge_init2.log"
+FINAL_LOG = LOG_DIR / "train_build2025.log"
 
-# Architecture / config variants to compare in panel (b).
-# Each entry: (log file, display label, include_in_plot)
+# Ablation variants for panel (b): (log-name prefix in logs/ablation/, label).
+# Each changes one setting from the final configuration (src/config.py).
+ABL_DIR = LOG_DIR / "ablation"
+ABL_SEEDS = [0, 1, 2]
 VARIANTS = [
-    ("train_gauge_init2.log",  "Final model\n(dropout=0.10, linear β)"),
-    ("train_dropout05.log",    "Dropout=0.05"),
-    ("train_dropout15.log",    "Dropout=0.15"),
-    ("train_betasilu.log",     "β-SiLU activation"),
-    ("train_nao_lags.log",     "NAO lag predictors"),
-    ("train_ssh_lag0.log",     "No SSH lag"),
-    ("train_large.log",        "Larger network\n(lr=1×10⁻⁴)"),
-    ("train_cosine.log",       "Cosine β schedule"),
+    ("final",      "Final config"),
+    ("dropout05",  "Dropout 0.05 (vs 0.10)"),
+    ("dropout15",  "Dropout 0.15"),
+    ("plain_silu", "Plain SiLU (vs β-SiLU)"),
+    ("nao_t_only", "NAO at t only (vs t, t−1, t−2)"),
+    ("ssh_t_only", "SSH PCs at t only (vs 4 lags)"),
+    ("larger_net", "Wider net 1024–1024–512, lr 10⁻⁴"),
+    ("cosine",     "Cosine β schedule (vs linear)"),
 ]
+# The noise-prediction loss depends on the β schedule (it averages over diffusion
+# steps whose difficulty the schedule sets), so cosine-schedule losses are not on
+# the same scale as the rest: they are listed at the panel edge, not plotted.
+OFF_SCALE = {"cosine"}
 
 # Style
 FS_TICK  = 6
@@ -106,15 +116,15 @@ def parse_log(path: Path) -> dict:
 def plot() -> None:
     final = parse_log(FINAL_LOG)
 
-    # Collect variant results for panel (b)
-    var_labels, var_vals = [], []
-    for fname, label in VARIANTS:
-        p = LOG_DIR / fname
-        if not p.exists():
-            continue
-        d = parse_log(p)
-        var_labels.append(label)
-        var_vals.append(d["best_val"])
+    # Collect variant results for panel (b): best val loss per seed
+    var_labels, var_vals, var_off = [], [], []
+    for prefix, label in VARIANTS:
+        vals = [parse_log(ABL_DIR / f"{prefix}_s{sd}.log")["best_val"]
+                for sd in ABL_SEEDS if (ABL_DIR / f"{prefix}_s{sd}.log").exists()]
+        if vals:
+            var_labels.append(label)
+            var_vals.append(np.array(vals))
+            var_off.append(prefix in OFF_SCALE)
 
     fig, (ax_a, ax_b) = plt.subplots(
         1, 2, figsize=(7.0, 3.0),
@@ -131,10 +141,10 @@ def plot() -> None:
     best_val = final["best_val"]
     ax_a.axhline(best_val, color=VAL_COLOR, linewidth=0.6,
                  linestyle="--", alpha=0.7)
-    ax_a.text(ep[-1] * 0.97, best_val * 1.015,
+    ax_a.text(ep[-1] * 0.97, best_val * 0.97,      # just below the line, clear of the curves
               f"best = {best_val:.4f}",
               fontsize=FS_TICK - 0.5, color=VAL_COLOR, alpha=0.85,
-              ha="right", va="bottom")
+              ha="right", va="top")
 
     ax_a.set_xlabel("Epoch", fontsize=FS_LABEL)
     ax_a.set_ylabel("Loss", fontsize=FS_LABEL)
@@ -144,27 +154,33 @@ def plot() -> None:
     ax_a.set_xlim(left=0)
     ax_a.set_ylim(bottom=0)
 
-    # ── Panel (b): variant comparison ─────────────────────────────────────────
-    y_pos  = np.arange(len(var_labels))
-    colors = [VAL_COLOR if i == 0 else "#888888" for i in range(len(var_labels))]
-
-    ax_b.barh(y_pos, var_vals, height=0.55, color=colors, alpha=0.80)
-    for i, v in enumerate(var_vals):
-        ax_b.text(v + 0.001, y_pos[i], f"{v:.4f}",
-                  fontsize=FS_TICK - 0.5, va="center", ha="left")
-
+    # ── Panel (b): ablation, seed ranges ────────────────────────────────────────
+    y_pos = np.arange(len(var_labels))
+    ref = var_vals[0]
+    ax_b.axvspan(ref.min(), ref.max(), color=VAL_COLOR, alpha=0.15, lw=0)
+    on_scale = [v for v, off in zip(var_vals, var_off) if not off]
+    lo = min(v.min() for v in on_scale)
+    hi = max(v.max() for v in on_scale)
+    pad = 0.12 * (hi - lo)
+    ax_b.set_xlim(lo - pad, hi + 2.5 * pad)
+    for i, (vals, off) in enumerate(zip(var_vals, var_off)):
+        if off:
+            ax_b.text(hi + 2.4 * pad, i, f"{vals.mean():.3f} →\n(different loss scale)",
+                      fontsize=FS_TICK - 1, ha="right", va="center", color="#555555")
+            continue
+        color = VAL_COLOR if i == 0 else "#555555"
+        ax_b.plot([vals.min(), vals.max()], [i, i], "-", color=color, lw=1.2, alpha=0.8)
+        ax_b.plot(vals, np.full(len(vals), i), "o", color=color, ms=3)
+        ax_b.text(vals.max(), i - 0.28, f"{vals.mean():.3f}", fontsize=FS_TICK - 1,
+                  ha="right", va="bottom", color=color)
     ax_b.set_yticks(y_pos)
     ax_b.set_yticklabels(var_labels, fontsize=FS_TICK)
-    ax_b.invert_yaxis()
-    ax_b.set_xlabel("Best validation loss", fontsize=FS_LABEL)
+    ax_b.set_ylim(len(var_labels) - 0.5, -0.6)
+    ax_b.set_xlabel("Best val. loss (3 seeds; label = mean)", fontsize=FS_LABEL)
     ax_b.set_title("(b)", fontsize=FS_TITLE, fontweight="bold", loc="left", pad=3)
     ax_b.tick_params(axis="both", labelsize=FS_TICK)
-    ax_b.set_xlim(left=0.13)
-    ax_b.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f"))
-
-    # vertical line at final model's best val
-    ax_b.axvline(var_vals[0], color=VAL_COLOR, linewidth=0.7,
-                 linestyle="--", alpha=0.65)
+    ax_b.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
+    ax_b.grid(True, axis="x", alpha=0.25, lw=0.5)
 
     fig.tight_layout(w_pad=2.0)
 

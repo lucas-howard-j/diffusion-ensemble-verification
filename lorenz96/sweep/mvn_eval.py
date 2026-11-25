@@ -30,7 +30,7 @@ from lorenz96.config  import N, TEST_START, TRAIN_END
 from lorenz96.dataset import load_trajectory
 
 CKPT_DIR  = os.path.join(os.path.dirname(__file__), "checkpoints")
-DATA_PATH = "lorenz96/data/l96_trajectory.npz"
+DATA_PATH = "lorenz96/l96_trajectory.npz"
 OUT_PATH  = os.path.join(os.path.dirname(__file__), "mvn_results.npz")
 N_EVAL    = 200
 N_ENS     = 20   # match DDPM and dynamical ensemble size

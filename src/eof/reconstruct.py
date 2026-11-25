@@ -18,7 +18,7 @@ def reconstruct_field(pcs: np.ndarray, variable: str) -> np.ndarray:
     field : (n_samples, n_lat, n_lon) ndarray
             Land points are NaN; ocean points are in original (un-weighted) units.
     """
-    eof_data = load_eofs(variable)
+    eof_data = load_eofs(variable, need_patterns=True)
     eofs_modes = eof_data["eofs"]        # (n_modes, n_ocean_points)
     ocean_mask = eof_data["ocean_mask"]  # (n_lat, n_lon)
     lats       = eof_data["lat"]

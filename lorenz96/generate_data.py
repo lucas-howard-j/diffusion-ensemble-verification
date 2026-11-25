@@ -4,7 +4,7 @@ Generate a single long Lorenz-96 trajectory for the joint-calibration testbed.
 L96 dynamics (Lorenz 1996):
     dX_k/dt = (X_{k+1} - X_{k-2}) * X_{k-1} - X_k + F     (k cyclic mod N)
 
-Output (lorenz96/data/l96_trajectory.npz):
+Output (lorenz96/l96_trajectory.npz):
     states : (traj_len, N)   — all N grid points
     t      : (traj_len,)     — time axis in model TU
     config : JSON-encoded parameter dict
@@ -91,7 +91,7 @@ def main():
     parser.add_argument("--traj_len", type=int,   default=TRAJ_LEN)
     parser.add_argument("--dt",       type=float, default=DT)
     parser.add_argument("--warmup",   type=float, default=WARMUP_TIME)
-    parser.add_argument("--out",      type=str,   default="lorenz96/data/l96_trajectory.npz")
+    parser.add_argument("--out",      type=str,   default="lorenz96/l96_trajectory.npz")
     args = parser.parse_args()
 
     print(f"Lorenz-96  N={N}  F={F}")

@@ -1,0 +1,45 @@
+Device: mps
+Train pairs: 5350  |  Val pairs: 546
+Config: lr=3e-05 dropout=0.1 hidden=(512, 512, 256) beta_silu=True schedule=linear ssh_lags=[0, 1, 2, 4] nao_lags=[0, 1, 2] cond_dim=131
+Epoch    0  train=1.0659  val=0.7705  lr=3.00e-05  2.5s/ep  ETA 41m
+Epoch    1  train=0.7605  val=0.5748  lr=3.00e-05  0.9s/ep  ETA 29m
+Epoch    2  train=0.5995  val=0.4200  lr=3.00e-05  0.9s/ep  ETA 24m
+Epoch    3  train=0.5080  val=0.4023  lr=3.00e-05  0.9s/ep  ETA 22m
+Epoch    4  train=0.4616  val=0.3428  lr=3.00e-05  0.9s/ep  ETA 21m
+Epoch   10  train=0.3387  val=0.2878  lr=3.00e-05  0.9s/ep  ETA 17m
+Epoch   20  train=0.2868  val=0.2340  lr=3.00e-05  1.0s/ep  ETA 16m
+Epoch   30  train=0.2479  val=0.2516  lr=3.00e-05  0.9s/ep  ETA 15m
+Epoch   40  train=0.2319  val=0.2269  lr=3.00e-05  0.9s/ep  ETA 15m
+Epoch   50  train=0.2218  val=0.2064  lr=3.00e-05  0.9s/ep  ETA 15m
+Epoch   60  train=0.2160  val=0.2068  lr=3.00e-05  0.9s/ep  ETA 15m
+Epoch   70  train=0.2120  val=0.2096  lr=3.00e-05  0.9s/ep  ETA 14m
+Epoch   80  train=0.2080  val=0.2095  lr=3.00e-05  0.9s/ep  ETA 14m
+Epoch   90  train=0.2004  val=0.1938  lr=3.00e-05  0.9s/ep  ETA 14m
+Epoch  100  train=0.1932  val=0.2049  lr=3.00e-05  0.9s/ep  ETA 14m
+Epoch  110  train=0.1978  val=0.1883  lr=3.00e-05  1.0s/ep  ETA 14m
+Epoch  120  train=0.1909  val=0.1847  lr=3.00e-05  1.0s/ep  ETA 14m
+Epoch  130  train=0.1937  val=0.2123  lr=3.00e-05  0.8s/ep  ETA 14m
+Epoch  140  train=0.1887  val=0.1871  lr=3.00e-05  0.9s/ep  ETA 13m
+Epoch  150  train=0.1935  val=0.1956  lr=3.00e-05  0.9s/ep  ETA 13m
+Epoch  160  train=0.1915  val=0.2174  lr=1.50e-05  0.9s/ep  ETA 13m
+Epoch  170  train=0.1812  val=0.1788  lr=1.50e-05  1.0s/ep  ETA 13m
+Epoch  180  train=0.1859  val=0.2186  lr=1.50e-05  0.9s/ep  ETA 13m
+Epoch  190  train=0.1876  val=0.1915  lr=1.50e-05  1.0s/ep  ETA 13m
+Epoch  200  train=0.1869  val=0.2059  lr=1.50e-05  0.9s/ep  ETA 12m
+Epoch  210  train=0.1862  val=0.1823  lr=1.50e-05  1.0s/ep  ETA 12m
+Epoch  220  train=0.1845  val=0.1904  lr=1.50e-05  0.9s/ep  ETA 12m
+Epoch  230  train=0.1875  val=0.2198  lr=1.50e-05  1.0s/ep  ETA 12m
+Epoch  240  train=0.1790  val=0.2029  lr=1.50e-05  0.9s/ep  ETA 12m
+Epoch  250  train=0.1840  val=0.1867  lr=7.50e-06  1.0s/ep  ETA 12m
+Epoch  260  train=0.1809  val=0.2169  lr=7.50e-06  0.9s/ep  ETA 12m
+Epoch  270  train=0.1799  val=0.1882  lr=7.50e-06  0.9s/ep  ETA 11m
+Epoch  280  train=0.1833  val=0.1836  lr=7.50e-06  0.9s/ep  ETA 11m
+Epoch  290  train=0.1827  val=0.2162  lr=7.50e-06  0.9s/ep  ETA 11m
+Epoch  300  train=0.1808  val=0.2054  lr=3.75e-06  0.9s/ep  ETA 11m
+Epoch  310  train=0.1759  val=0.1802  lr=3.75e-06  0.9s/ep  ETA 11m
+Epoch  320  train=0.1868  val=0.2023  lr=3.75e-06  0.9s/ep  ETA 11m
+Epoch  330  train=0.1765  val=0.2286  lr=3.75e-06  0.9s/ep  ETA 10m
+Epoch  340  train=0.1888  val=0.1904  lr=3.75e-06  1.0s/ep  ETA 10m
+Early stopping at epoch 346
+Best val loss: 0.1589  →  checkpoints/ablation/final_s1.pt
+Beta history  →  logs/ablation/beta_history_final_s1.csv

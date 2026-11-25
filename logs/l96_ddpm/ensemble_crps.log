@@ -1,0 +1,7 @@
+Running 2000 × 500 members through CRPS emulator  (device=mps) ...
+  IC 0/2000
+  IC 1000/2000
+  Done.
+CRPS skill=+0.4523  VS skill=+0.3528  VS/CRPS=0.7800  spread=0.5633
+Bootstrapping CIs ...
+Saved → lorenz96/ensemble_results/crps_results.npz

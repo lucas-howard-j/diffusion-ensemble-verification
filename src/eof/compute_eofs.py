@@ -13,7 +13,7 @@ import xarray as xr
 from eofs.standard import Eof
 
 from src.config import (
-    EOF_SST, EOF_SSH,
+    EOF_SST, EOF_SSH, EOF_SST_PCS, EOF_SSH_PCS,
     SST_ANOM_WEEKLY, SSH_ANOM_WEEKLY,
     N_EOFS_MAX, VARIANCE_THRESHOLD,
     TRAIN_YEARS,
@@ -111,15 +111,49 @@ def compute_eofs(variable: str, save: bool = True, n_eofs_max: int | None = None
         out_path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(str(out_path), **result)
         print(f"Saved → {out_path}")
+        save_pcs_only(variable, result)
 
     return result
 
 
-def load_eofs(variable: str) -> dict:
-    """Load pre-computed EOF decomposition."""
-    path = EOF_SST if variable == "sst" else EOF_SSH
+def save_pcs_only(variable: str, result: dict | None = None) -> None:
+    """Write the PC-only copy of an EOF file (everything except the patterns).
+
+    The spatial patterns (``eofs``, n_modes × n_ocean_points) are ~99 % of the
+    file; the SSH models only need the PCs, so this copy (a few MB) is tracked
+    in git and lets the models be trained and evaluated without the
+    GLORYS-derived fields.
+    """
+    if result is None:
+        result = _load_npz(EOF_SST if variable == "sst" else EOF_SSH)
+    out = EOF_SST_PCS if variable == "sst" else EOF_SSH_PCS
+    np.savez_compressed(str(out), **{k: v for k, v in result.items() if k != "eofs"})
+    print(f"Saved → {out}")
+
+
+def _load_npz(path) -> dict:
     data = np.load(str(path), allow_pickle=True)
     return {k: data[k] for k in data.files}
+
+
+def load_eofs(variable: str, need_patterns: bool = False) -> dict:
+    """Load a pre-computed EOF decomposition.
+
+    Uses the full file when present; otherwise falls back to the PC-only copy,
+    which has every key except ``eofs``.  Callers that project onto or
+    reconstruct from the spatial patterns must pass ``need_patterns=True``.
+    """
+    full = EOF_SST if variable == "sst" else EOF_SSH
+    pcs  = EOF_SST_PCS if variable == "sst" else EOF_SSH_PCS
+    if full.exists():
+        return _load_npz(full)
+    if need_patterns:
+        raise FileNotFoundError(
+            f"{full} not found. The spatial EOF patterns are not in the repository; "
+            f"regenerate them with `python -m src.eof.compute_eofs --variable {variable}`.")
+    if not pcs.exists():
+        raise FileNotFoundError(f"Neither {full} nor {pcs} found.")
+    return _load_npz(pcs)
 
 
 if __name__ == "__main__":
@@ -128,5 +162,10 @@ if __name__ == "__main__":
     parser.add_argument("--n_eofs", type=int, default=None)
     parser.add_argument("--n_modes", type=int, default=None,
                         help="Force exactly this many modes, bypassing variance threshold")
+    parser.add_argument("--pcs-only", action="store_true",
+                        help="Only write the PC-only copy from an existing full EOF file")
     args = parser.parse_args()
-    compute_eofs(args.variable, n_eofs_max=args.n_eofs, n_modes_override=args.n_modes)
+    if args.pcs_only:
+        save_pcs_only(args.variable)
+    else:
+        compute_eofs(args.variable, n_eofs_max=args.n_eofs, n_modes_override=args.n_modes)
